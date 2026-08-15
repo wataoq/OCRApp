@@ -1,7 +1,6 @@
 package com.local.bookocr.ocr
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import com.google.android.gms.tasks.Task
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
@@ -12,6 +11,7 @@ import com.local.bookocr.ocr.model.OcrBoundingBox
 import com.local.bookocr.ocr.model.OcrDocument
 import com.local.bookocr.ocr.model.OcrElement
 import com.local.bookocr.ocr.model.OcrLine
+import com.local.bookocr.imageprocessor.internal.BitmapDecoding
 import java.io.File
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -31,7 +31,7 @@ class MlKitOcrEngine : OcrEngine {
     }
 
     override suspend fun recognize(imageFile: File): OcrDocument {
-        val bitmap = decodeSampledBitmap(imageFile, MAX_DIMENSION_PX)
+        val bitmap = BitmapDecoding.decodeUpright(imageFile, MAX_DIMENSION_PX)
             ?: throw OcrException("画像を読み込めませんでした")
         try {
             val text = recognizer.process(InputImage.fromBitmap(bitmap, 0)).await()
@@ -43,22 +43,6 @@ class MlKitOcrEngine : OcrEngine {
         } finally {
             bitmap.recycle()
         }
-    }
-
-    private fun decodeSampledBitmap(file: File, maxDimension: Int): Bitmap? {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(file.absolutePath, bounds)
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-
-        var sampleSize = 1
-        while (bounds.outWidth / (sampleSize * 2) >= maxDimension ||
-            bounds.outHeight / (sampleSize * 2) >= maxDimension
-        ) {
-            sampleSize *= 2
-        }
-
-        val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
-        return BitmapFactory.decodeFile(file.absolutePath, options)
     }
 
     private suspend fun <T> Task<T>.await(): T = suspendCancellableCoroutine { continuation ->
@@ -73,9 +57,11 @@ class MlKitOcrEngine : OcrEngine {
 }
 
 private fun Text.toOcrDocument(engineId: String): OcrDocument {
-    // Japanese books are read right-to-left: sort blocks by their horizontal center
-    // in descending order so the rightmost column comes first.
-    val sortedBlocks = textBlocks.sortedByDescending { it.boundingBox?.centerX() ?: 0 }
+    val layout = textBlocks.mapIndexed { index, block ->
+        val box = block.boundingBox
+        ReadingOrderBlock(index, box?.left, box?.top, box?.right, box?.bottom)
+    }
+    val sortedBlocks = readingOrder(layout).map(textBlocks::get)
     return OcrDocument(
         rawText = sortedBlocks.joinToString("\n") { it.text },
         engineId = engineId,

@@ -47,4 +47,28 @@ class ImageProcessingSettingsTest {
         assertFalse(ImageProcessingSettings(perspectivePoints = PerspectiveQuad()).isIdentity)
         assertFalse(ImageProcessingSettings(enhancementMode = EnhancementMode.GRAYSCALE).isIdentity)
     }
+
+    @Test
+    fun `perspective coordinates are converted into crop-local coordinates`() {
+        val quad = PerspectiveQuad(
+            topLeftX = 0.2f,
+            topLeftY = 0.25f,
+            topRightX = 0.8f,
+            topRightY = 0.25f,
+            bottomRightX = 0.8f,
+            bottomRightY = 0.75f,
+            bottomLeftX = 0.2f,
+            bottomLeftY = 0.75f,
+        )
+
+        val converted = quad.relativeTo(NormalizedRect(0.2f, 0.25f, 0.8f, 0.75f))
+
+        assertEquals(PerspectiveQuad(), converted)
+    }
+
+    @Test
+    fun `invalid zero-size crop leaves perspective coordinates unchanged`() {
+        val quad = PerspectiveQuad(topLeftX = 0.3f)
+        assertEquals(quad, quad.relativeTo(NormalizedRect(0.5f, 0f, 0.5f, 1f)))
+    }
 }

@@ -1,7 +1,6 @@
 package com.local.bookocr.ui.components
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
@@ -19,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
+import com.local.bookocr.imageprocessor.internal.BitmapDecoding
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -32,7 +32,9 @@ import kotlinx.coroutines.withContext
 fun PageThumbnail(imageFile: File, modifier: Modifier = Modifier, maxDimensionPx: Int = 200) {
     var bitmap by remember(imageFile, maxDimensionPx) { mutableStateOf<Bitmap?>(null) }
     LaunchedEffect(imageFile, maxDimensionPx) {
-        bitmap = withContext(Dispatchers.IO) { decodeSampledThumbnail(imageFile, maxDimensionPx) }
+        bitmap = withContext(Dispatchers.IO) {
+            BitmapDecoding.decodeUpright(imageFile, maxDimensionPx)
+        }
     }
 
     Box(modifier = modifier.size(64.dp), contentAlignment = Alignment.Center) {
@@ -43,21 +45,4 @@ fun PageThumbnail(imageFile: File, modifier: Modifier = Modifier, maxDimensionPx
             else -> Icon(Icons.Default.BrokenImage, contentDescription = "画像が見つかりません")
         }
     }
-}
-
-private fun decodeSampledThumbnail(file: File, maxDimension: Int): Bitmap? {
-    if (!file.exists()) return null
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    BitmapFactory.decodeFile(file.absolutePath, bounds)
-    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-
-    var sampleSize = 1
-    while (bounds.outWidth / (sampleSize * 2) >= maxDimension ||
-        bounds.outHeight / (sampleSize * 2) >= maxDimension
-    ) {
-        sampleSize *= 2
-    }
-
-    val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
-    return BitmapFactory.decodeFile(file.absolutePath, options)
 }

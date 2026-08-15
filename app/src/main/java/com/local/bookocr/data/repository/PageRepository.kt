@@ -134,11 +134,12 @@ class PageRepository(
     suspend fun clearDewarpImage(pageId: Long): Result<Unit> = withContext(ioDispatcher) {
         runCatching {
             val page = pageDao.getByIdOnce(pageId)
-            page?.dewarpImagePath?.let { imageStorage.deleteDewarp(it) }
             pageDao.updateDewarpImage(pageId, null, null, System.currentTimeMillis())
             if (page?.activeVariant == ProcessingVariant.DEWARPED.name) {
                 pageDao.updateActiveVariant(pageId, ProcessingVariant.PERSPECTIVE.name, System.currentTimeMillis())
             }
+            page?.dewarpImagePath?.let { imageStorage.deleteDewarp(it) }
+            Unit
         }
     }
 
@@ -163,16 +164,21 @@ class PageRepository(
      */
     suspend fun clearProcessedImage(pageId: Long): Result<Unit> = withContext(ioDispatcher) {
         runCatching {
-            pageDao.getByIdOnce(pageId)?.processedImagePath?.let { imageStorage.deleteProcessed(it) }
+            val page = pageDao.getByIdOnce(pageId)
             pageDao.updateProcessedImage(pageId, null, null, 0, System.currentTimeMillis())
+            if (page?.activeVariant == ProcessingVariant.PERSPECTIVE.name) {
+                pageDao.updateActiveVariant(pageId, ProcessingVariant.ORIGINAL.name, System.currentTimeMillis())
+            }
+            page?.processedImagePath?.let { imageStorage.deleteProcessed(it) }
+            Unit
         }
     }
 
     suspend fun deletePage(page: PageEntity): Result<Unit> = withContext(ioDispatcher) {
         runCatching {
+            pageDao.delete(page)
             page.processedImagePath?.let { imageStorage.deleteProcessed(it) }
             page.dewarpImagePath?.let { imageStorage.deleteDewarp(it) }
-            pageDao.delete(page)
             imageStorage.delete(page.storedImagePath)
             Unit
         }

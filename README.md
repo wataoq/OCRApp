@@ -9,7 +9,10 @@ stays visible for comparison.
 - Library of books (title, optional author, page count)
 - Per-book page list, ordered by page number with a deterministic fallback for unnumbered pages
 - Import a page photo via the system Photo Picker; the app keeps a private copy
+- Capture a page with the system camera
+- Non-destructive crop, perspective, contrast, and user-guided curved-page correction
 - On-device Japanese OCR (ML Kit Text Recognition v2)
+- EXIF-aware image display and OCR, with layout-aware horizontal/vertical block ordering
 - Editor screen: zoomable source image above an editable transcript
 - Strict separation of machine OCR output (`rawText`) from the user-corrected transcript
   (`editedText`) - see "The rawText/editedText invariant" below
@@ -60,14 +63,9 @@ too; otherwise the edit is left untouched and only `rawText` is refreshed. See
 Requires an Android SDK (compileSdk 35) and network access to Google's Maven repository
 (`dl.google.com`) for AndroidX/Compose/Room/ML Kit artifacts on first sync.
 
-**This project was generated in a sandboxed environment that had no Android SDK installed
-and whose network policy blocked `dl.google.com`, so none of the above commands could
-actually be executed there.** The Gradle wrapper, version catalog, and full source tree are
-in place and were carefully hand-reviewed for compile correctness, but `assembleDebug`/
-`test`/`lint` have not been verified to pass. Run them in a normal Android development
-environment (Android Studio, or a CI runner with SDK + network access) before relying on
-this build. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for what was and wasn't
-verified.
+The project is verified with `assembleDebug`, unit tests, and Android Lint using JDK 21 and
+Android SDK 35. Use Android Studio's bundled JDK or set `JAVA_HOME`; no machine-specific JDK path
+is committed.
 
 ## Run
 
@@ -89,7 +87,7 @@ reading order, page curvature/perspective, and more.
 
 ## Future extension points
 
-The architecture deliberately leaves room for (but does not implement) CameraX capture,
-batch import, perspective/contrast correction, a cloud OCR engine behind the same
-`OcrEngine` interface, OCR engine comparison, AI-assisted correction *suggestions* (never
-silent rewrites), TXT/Markdown export, and full-text search.
+The architecture deliberately leaves room for batch import, another local OCR engine behind the
+same `OcrEngine` interface, OCR engine comparison, AI-assisted correction *suggestions* (never
+silent rewrites), TXT/Markdown export, and full-text search. The proposed Tesseract 5 migration is
+documented in [`docs/TESSERACT_MIGRATION.md`](docs/TESSERACT_MIGRATION.md).

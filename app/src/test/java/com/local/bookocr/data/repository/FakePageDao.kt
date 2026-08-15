@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.update
 class FakePageDao : PageDao {
     private var nextId = 1L
     val pages = MutableStateFlow<List<PageEntity>>(emptyList())
+    var deleteFailure: Throwable? = null
 
     fun observeAll(): Flow<List<PageEntity>> = pages
 
@@ -20,6 +21,7 @@ class FakePageDao : PageDao {
     }
 
     override suspend fun delete(page: PageEntity) {
+        deleteFailure?.let { throw it }
         pages.update { list -> list.filterNot { it.id == page.id } }
     }
 

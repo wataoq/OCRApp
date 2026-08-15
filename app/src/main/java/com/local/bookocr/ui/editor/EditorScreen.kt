@@ -1,7 +1,6 @@
 package com.local.bookocr.ui.editor
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -48,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.local.bookocr.imageprocessor.model.ProcessingVariant
+import com.local.bookocr.imageprocessor.internal.BitmapDecoding
 import com.local.bookocr.ui.bookOcrContainer
 import com.local.bookocr.ui.components.ZoomableImage
 import java.io.File
@@ -180,7 +180,9 @@ private fun SourceImageSection(imageFile: File?) {
 
         var bitmap by remember(imageFile) { mutableStateOf<Bitmap?>(null) }
         LaunchedEffect(imageFile) {
-            bitmap = withContext(Dispatchers.IO) { decodeSampledForDisplay(imageFile, MAX_DISPLAY_DIMENSION_PX) }
+            bitmap = withContext(Dispatchers.IO) {
+                BitmapDecoding.decodeUpright(imageFile, MAX_DISPLAY_DIMENSION_PX)
+            }
         }
         val currentBitmap = bitmap
         Box(
@@ -317,20 +319,3 @@ private fun TranscriptSection(
 }
 
 private const val MAX_DISPLAY_DIMENSION_PX = 1600
-
-private fun decodeSampledForDisplay(file: File, maxDimension: Int): Bitmap? {
-    if (!file.exists()) return null
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    BitmapFactory.decodeFile(file.absolutePath, bounds)
-    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-
-    var sampleSize = 1
-    while (bounds.outWidth / (sampleSize * 2) >= maxDimension ||
-        bounds.outHeight / (sampleSize * 2) >= maxDimension
-    ) {
-        sampleSize *= 2
-    }
-
-    val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
-    return BitmapFactory.decodeFile(file.absolutePath, options)
-}
