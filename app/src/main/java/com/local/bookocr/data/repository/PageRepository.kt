@@ -12,6 +12,17 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
+data class PreparedPagePaths(
+    val storedImagePath: String,
+    val processedImagePath: String? = null,
+    val processingSettingsJson: String? = null,
+    val processingVersion: Int = 0,
+    val pageNumber: Int? = null,
+    val dewarpImagePath: String? = null,
+    val dewarpMeshJson: String? = null,
+    val activeVariant: ProcessingVariant = ProcessingVariant.ORIGINAL,
+)
+
 class PageRepository(
     private val pageDao: PageDao,
     private val imageStorage: ImageStorage,
@@ -117,6 +128,37 @@ class PageRepository(
                     createdAt = now,
                     updatedAt = now,
                 ),
+            )
+        }
+    }
+
+    /**
+     * Persists all pages extracted from one capture atomically and preserves the supplied order.
+     * The caller owns file cleanup when this database operation fails.
+     */
+    suspend fun importPreparedPages(
+        bookId: Long,
+        pages: List<PreparedPagePaths>,
+    ): Result<List<Long>> = withContext(ioDispatcher) {
+        require(pages.isNotEmpty())
+        val now = System.currentTimeMillis()
+        runCatching {
+            pageDao.insertAll(
+                pages.mapIndexed { index, page ->
+                    PageEntity(
+                        bookId = bookId,
+                        pageNumber = page.pageNumber,
+                        storedImagePath = page.storedImagePath,
+                        processedImagePath = page.processedImagePath,
+                        processingSettingsJson = page.processingSettingsJson,
+                        processingVersion = page.processingVersion,
+                        dewarpImagePath = page.dewarpImagePath,
+                        dewarpMeshJson = page.dewarpMeshJson,
+                        activeVariant = page.activeVariant.name,
+                        createdAt = now + index,
+                        updatedAt = now + index,
+                    )
+                },
             )
         }
     }

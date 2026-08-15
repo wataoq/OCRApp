@@ -13,6 +13,10 @@ interface PageDao {
     @Insert
     suspend fun insert(page: PageEntity): Long
 
+    /** Room executes a collection insert in one transaction. */
+    @Insert
+    suspend fun insertAll(pages: List<PageEntity>): List<Long>
+
     @Delete
     suspend fun delete(page: PageEntity)
 

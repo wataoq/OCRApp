@@ -11,14 +11,20 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.local.bookocr.data.repository.PageRepository
+import com.local.bookocr.data.repository.PreparedPagePaths
 import com.local.bookocr.imageprocessor.ImageProcessor
+import com.local.bookocr.imageprocessor.GutterDetector
 import com.local.bookocr.imageprocessor.PageDewarper
 import com.local.bookocr.imageprocessor.model.DewarpMesh
+import com.local.bookocr.imageprocessor.model.DocumentLayout
 import com.local.bookocr.imageprocessor.model.EnhancementMode
 import com.local.bookocr.imageprocessor.model.ImageProcessingSettings
 import com.local.bookocr.imageprocessor.model.NormalizedRect
 import com.local.bookocr.imageprocessor.model.PerspectiveQuad
 import com.local.bookocr.imageprocessor.model.ProcessingVariant
+import com.local.bookocr.imageprocessor.model.ReadingDirection
+import com.local.bookocr.imageprocessor.model.SpreadPageSide
+import com.local.bookocr.imageprocessor.model.orderedSides
 import com.local.bookocr.storage.ImageStorage
 import java.io.File
 import java.io.FileOutputStream
@@ -70,11 +76,70 @@ class ImagePreprocessingViewModel(
                 _uiState.update { it.copy(errorMessage = "画像を読み込めませんでした") }
             } else {
                 _uiState.update { it.copy(originalBitmap = bitmap) }
+                if (_uiState.value.documentLayout == DocumentLayout.TWO_PAGE_SPREAD) {
+                    detectGutter(bitmap)
+                }
             }
         }
     }
 
-    fun onTabSelected(tab: PreprocessingTab) = _uiState.update { it.copy(activeTab = tab) }
+    fun onTabSelected(tab: PreprocessingTab) = _uiState.update { state ->
+        val unavailableForSpread = tab == PreprocessingTab.CROP ||
+            tab == PreprocessingTab.PERSPECTIVE || tab == PreprocessingTab.ENHANCEMENT
+        if (state.documentLayout == DocumentLayout.TWO_PAGE_SPREAD && unavailableForSpread) state
+        else state.copy(activeTab = tab, previewBitmap = null, showProcessed = false)
+    }
+
+    fun onDocumentLayoutChanged(layout: DocumentLayout) {
+        val originalBitmap = _uiState.value.originalBitmap
+        _uiState.update { state -> state.copy(
+            documentLayout = layout,
+            activeTab = PreprocessingTab.LAYOUT,
+            previewBitmap = null,
+            showProcessed = false,
+        ) }
+        if (layout == DocumentLayout.TWO_PAGE_SPREAD && originalBitmap != null) {
+            detectGutter(originalBitmap)
+        }
+    }
+
+    private fun detectGutter(bitmap: Bitmap) {
+        viewModelScope.launch(Dispatchers.Default) {
+            val detected = GutterDetector.detect(bitmap)
+            _uiState.update { state ->
+                if (state.documentLayout == DocumentLayout.TWO_PAGE_SPREAD &&
+                    state.splitPosition == DEFAULT_SPLIT_POSITION
+                ) {
+                    state.withSplitPosition(detected)
+                } else {
+                    state
+                }
+            }
+        }
+    }
+
+    fun onReadingDirectionChanged(direction: ReadingDirection) = _uiState.update {
+        it.copy(readingDirection = direction)
+    }
+
+    fun onActiveSpreadSideChanged(side: SpreadPageSide) = _uiState.update {
+        it.copy(activeSpreadSide = side, previewBitmap = null, showProcessed = false)
+    }
+
+    fun onSplitPositionChanged(position: Float) = _uiState.update { state ->
+        state.withSplitPosition(position)
+    }
+
+    private fun ImagePreprocessingUiState.withSplitPosition(position: Float): ImagePreprocessingUiState {
+        val split = position.coerceIn(MIN_SPLIT_POSITION, MAX_SPLIT_POSITION)
+        return copy(
+            splitPosition = split,
+            rightPageMesh = DewarpMesh.forHorizontalRegion(split, 1f, DEFAULT_SPREAD_MESH_POINTS),
+            leftPageMesh = DewarpMesh.forHorizontalRegion(0f, split, DEFAULT_SPREAD_MESH_POINTS),
+            previewBitmap = null,
+            showProcessed = false,
+        )
+    }
 
     fun onCropChanged(rect: NormalizedRect) = _uiState.update {
         it.copy(settings = it.settings.copy(cropRect = rect), showProcessed = false)
@@ -93,14 +158,35 @@ class ImagePreprocessingViewModel(
         it.copy(dewarpMesh = it.dewarpMesh ?: DewarpMesh.default(DEFAULT_MESH_POINTS), showProcessed = false)
     }
 
-    fun onDewarpMeshChanged(mesh: DewarpMesh) = _uiState.update {
-        it.copy(dewarpMesh = mesh, showProcessed = false)
+    fun onDewarpMeshChanged(mesh: DewarpMesh) = _uiState.update { state ->
+        when (state.documentLayout) {
+            DocumentLayout.SINGLE_PAGE -> state.copy(dewarpMesh = mesh, showProcessed = false)
+            DocumentLayout.TWO_PAGE_SPREAD -> when (state.activeSpreadSide) {
+                SpreadPageSide.RIGHT -> state.copy(rightPageMesh = mesh, showProcessed = false)
+                SpreadPageSide.LEFT -> state.copy(leftPageMesh = mesh, showProcessed = false)
+            }
+        }
     }
 
     fun onResetSettings() = _uiState.update {
         it.copy(
             settings = ImageProcessingSettings(),
             dewarpMesh = null,
+            documentLayout = DocumentLayout.SINGLE_PAGE,
+            splitPosition = DEFAULT_SPLIT_POSITION,
+            readingDirection = ReadingDirection.RIGHT_TO_LEFT,
+            activeSpreadSide = SpreadPageSide.RIGHT,
+            rightPageMesh = DewarpMesh.forHorizontalRegion(
+                DEFAULT_SPLIT_POSITION,
+                1f,
+                DEFAULT_SPREAD_MESH_POINTS,
+            ),
+            leftPageMesh = DewarpMesh.forHorizontalRegion(
+                0f,
+                DEFAULT_SPLIT_POSITION,
+                DEFAULT_SPREAD_MESH_POINTS,
+            ),
+            activeTab = PreprocessingTab.LAYOUT,
             previewBitmap = null,
             showProcessed = false,
         )
@@ -113,8 +199,9 @@ class ImagePreprocessingViewModel(
     fun onUpdatePreview() {
         val state = _uiState.value
         val useDewarp = state.activeTab == PreprocessingTab.DEWARP
+        val previewMesh = state.activeDewarpMesh()
         if (useDewarp) {
-            val mesh = state.dewarpMesh
+            val mesh = previewMesh
             if (mesh == null || !mesh.isValid) {
                 _uiState.update { it.copy(previewBitmap = null, showProcessed = false) }
                 return
@@ -132,7 +219,7 @@ class ImagePreprocessingViewModel(
                 return@launch
             }
             val result = if (useDewarp) {
-                pageDewarper.dewarpForPreview(previewInput, state.dewarpMesh!!, PREVIEW_MAX_DIMENSION)
+                pageDewarper.dewarpForPreview(previewInput, previewMesh!!, PREVIEW_MAX_DIMENSION)
             } else {
                 imageProcessor.processForPreview(previewInput, state.settings, PREVIEW_MAX_DIMENSION)
             }
@@ -150,65 +237,141 @@ class ImagePreprocessingViewModel(
         it.copy(showProcessed = !it.showProcessed && it.previewBitmap != null)
     }
 
-    /**
-     * Imports the original, generates the perspective and/or dewarp variants that were configured,
-     * picks a sensible active variant, and persists the page. Any correction that fails to generate
-     * is simply omitted - the page (and original) always survive.
-     */
     fun onConfirm() {
-        if (_uiState.value.isSaving) return
+        val state = _uiState.value
+        if (state.isSaving) return
         _uiState.update { it.copy(isSaving = true) }
-        val settings = _uiState.value.settings
-        val mesh = _uiState.value.dewarpMesh
         viewModelScope.launch {
-            val originalPath = imageStorage.importImage(sourceUri).getOrElse {
-                _uiState.update { s -> s.copy(isSaving = false, errorMessage = "画像の読み込みに失敗しました") }
-                return@launch
-            }
-            val originalFile = imageStorage.resolveFile(originalPath)
-
-            var processedPath: String? = null
-            if (!settings.isIdentity) {
-                val processedFile = imageStorage.allocateProcessedFile()
-                imageProcessor.process(originalFile, settings, processedFile)
-                    .onSuccess { processedPath = processedFile.name }
-            }
-
-            var dewarpPath: String? = null
-            if (mesh != null && mesh.isValid && pageDewarper.isAvailable()) {
-                val dewarpFile = imageStorage.allocateDewarpFile()
-                pageDewarper.dewarp(originalFile, mesh, dewarpFile)
-                    .onSuccess { dewarpPath = dewarpFile.name }
-            }
-
-            val activeVariant = when {
-                dewarpPath != null -> ProcessingVariant.DEWARPED
-                processedPath != null -> ProcessingVariant.PERSPECTIVE
-                else -> ProcessingVariant.ORIGINAL
-            }
-            val settingsJson = if (processedPath != null) json.encodeToString(settings) else null
-            val version = if (processedPath != null) ImageProcessor.PROCESSING_VERSION else 0
-            val meshJson = if (dewarpPath != null) json.encodeToString(mesh) else null
-
-            pageRepository.importPageWithPaths(
-                bookId = bookId,
-                storedImagePath = originalPath,
-                processedImagePath = processedPath,
-                processingSettingsJson = settingsJson,
-                processingVersion = version,
-                pageNumber = null,
-                dewarpImagePath = dewarpPath,
-                dewarpMeshJson = meshJson,
-                activeVariant = activeVariant,
-            ).onSuccess { pageId ->
-                _uiState.update { it.copy(isSaving = false, navigateToEditor = pageId) }
-            }.onFailure {
-                imageStorage.delete(originalPath)
-                processedPath?.let { p -> imageStorage.deleteProcessed(p) }
-                dewarpPath?.let { p -> imageStorage.deleteDewarp(p) }
-                _uiState.update { it.copy(isSaving = false, errorMessage = "ページの作成に失敗しました") }
+            when (state.documentLayout) {
+                DocumentLayout.SINGLE_PAGE -> confirmSinglePage(state)
+                DocumentLayout.TWO_PAGE_SPREAD -> confirmTwoPageSpread(state)
             }
         }
+    }
+
+    private suspend fun confirmSinglePage(state: ImagePreprocessingUiState) {
+        val settings = state.settings
+        val mesh = state.dewarpMesh
+        val originalPath = imageStorage.importImage(sourceUri).getOrElse {
+            failSave("画像の読み込みに失敗しました")
+            return
+        }
+        val originalFile = imageStorage.resolveFile(originalPath)
+
+        var processedPath: String? = null
+        if (!settings.isIdentity) {
+            val processedFile = imageStorage.allocateProcessedFile()
+            imageProcessor.process(originalFile, settings, processedFile)
+                .onSuccess { processedPath = processedFile.name }
+        }
+
+        var dewarpPath: String? = null
+        if (mesh != null && mesh.isValid && pageDewarper.isAvailable()) {
+            val dewarpFile = imageStorage.allocateDewarpFile()
+            pageDewarper.dewarp(originalFile, mesh, dewarpFile)
+                .onSuccess { dewarpPath = dewarpFile.name }
+        }
+
+        val activeVariant = when {
+            dewarpPath != null -> ProcessingVariant.DEWARPED
+            processedPath != null -> ProcessingVariant.PERSPECTIVE
+            else -> ProcessingVariant.ORIGINAL
+        }
+        val settingsJson = if (processedPath != null) json.encodeToString(settings) else null
+        val version = if (processedPath != null) ImageProcessor.PROCESSING_VERSION else 0
+        val meshJson = if (dewarpPath != null) json.encodeToString(mesh) else null
+
+        pageRepository.importPageWithPaths(
+            bookId = bookId,
+            storedImagePath = originalPath,
+            processedImagePath = processedPath,
+            processingSettingsJson = settingsJson,
+            processingVersion = version,
+            pageNumber = null,
+            dewarpImagePath = dewarpPath,
+            dewarpMeshJson = meshJson,
+            activeVariant = activeVariant,
+        ).onSuccess { pageId ->
+            _uiState.update { it.copy(isSaving = false, navigateToEditor = pageId) }
+        }.onFailure {
+            imageStorage.delete(originalPath)
+            processedPath?.let { path -> imageStorage.deleteProcessed(path) }
+            dewarpPath?.let { path -> imageStorage.deleteDewarp(path) }
+            failSave("ページの作成に失敗しました")
+        }
+    }
+
+    /**
+     * Treats a spread as two independent physical surfaces. Each page gets its own copy of the
+     * untouched capture and its own flattened output, so deleting or reprocessing one page cannot
+     * invalidate the other. The supplied reading direction determines insertion/display order.
+     */
+    private suspend fun confirmTwoPageSpread(state: ImagePreprocessingUiState) {
+        if (!pageDewarper.isAvailable()) {
+            failSave("見開きの分割には曲面補正を利用できる端末が必要です")
+            return
+        }
+
+        val storedPaths = mutableListOf<String>()
+        val flatPaths = mutableListOf<String>()
+        val preparedPages = mutableListOf<PreparedPagePaths>()
+
+        for (side in state.readingDirection.orderedSides()) {
+            val originalPath = imageStorage.importImage(sourceUri).getOrElse {
+                cleanupPreparedSpread(storedPaths, flatPaths)
+                failSave("見開き画像の読み込みに失敗しました")
+                return
+            }
+            storedPaths += originalPath
+            val mesh = state.meshFor(side)
+            val flatFile = imageStorage.allocateDewarpFile()
+            pageDewarper.dewarp(imageStorage.resolveFile(originalPath), mesh, flatFile).getOrElse {
+                cleanupPreparedSpread(storedPaths, flatPaths)
+                imageStorage.deleteDewarp(flatFile.name)
+                failSave("${side.label()}ページの平坦化に失敗しました")
+                return
+            }
+            flatPaths += flatFile.name
+            preparedPages += PreparedPagePaths(
+                storedImagePath = originalPath,
+                dewarpImagePath = flatFile.name,
+                dewarpMeshJson = json.encodeToString(mesh),
+                activeVariant = ProcessingVariant.DEWARPED,
+            )
+        }
+
+        pageRepository.importPreparedPages(bookId, preparedPages)
+            .onSuccess { pageIds ->
+                _uiState.update { it.copy(isSaving = false, navigateToEditor = pageIds.first()) }
+            }
+            .onFailure {
+                cleanupPreparedSpread(storedPaths, flatPaths)
+                failSave("見開きページの作成に失敗しました")
+            }
+    }
+
+    private suspend fun cleanupPreparedSpread(storedPaths: List<String>, flatPaths: List<String>) {
+        storedPaths.distinct().forEach { imageStorage.delete(it) }
+        flatPaths.distinct().forEach { imageStorage.deleteDewarp(it) }
+    }
+
+    private fun failSave(message: String) {
+        _uiState.update { it.copy(isSaving = false, errorMessage = message) }
+    }
+
+    private fun ImagePreprocessingUiState.activeDewarpMesh(): DewarpMesh? = when (documentLayout) {
+        DocumentLayout.SINGLE_PAGE -> dewarpMesh
+        DocumentLayout.TWO_PAGE_SPREAD -> meshFor(activeSpreadSide)
+    }
+
+    private fun ImagePreprocessingUiState.meshFor(side: SpreadPageSide): DewarpMesh = when (side) {
+        SpreadPageSide.RIGHT -> rightPageMesh
+        SpreadPageSide.LEFT -> leftPageMesh
+    }
+
+    private fun SpreadPageSide.label(): String = when (this) {
+        SpreadPageSide.RIGHT -> "右"
+        SpreadPageSide.LEFT -> "左"
     }
 
     fun onErrorShown() = _uiState.update { it.copy(errorMessage = null) }
@@ -273,6 +436,8 @@ class ImagePreprocessingViewModel(
         private const val PREVIEW_JPEG_QUALITY = 90
         private const val PREVIEW_INPUT_FILENAME = "preprocess_preview_input.jpg"
         private const val DEFAULT_MESH_POINTS = 3
+        private const val MIN_SPLIT_POSITION = 0.25f
+        private const val MAX_SPLIT_POSITION = 0.75f
 
         fun factory(
             bookId: Long,

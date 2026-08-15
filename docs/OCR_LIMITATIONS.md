@@ -18,8 +18,10 @@ them as "expect these failure modes," not "we verified these fail this way."
 - **Reading order.** Horizontal blocks are ordered top-to-bottom and left-to-right; detected
   vertical columns are ordered right-to-left. Sidebars, footnotes, captions, and mixed layouts can
   still be ambiguous.
-- **Page curvature and perspective.** User-guided perspective and curved-page correction are
-  available, but the app does not automatically detect the page boundary or curvature.
+- **Page curvature and perspective.** A single page can be corrected with a user-guided mesh. A
+  two-page spread is first split at an automatically suggested, manually adjustable gutter, then
+  the right and left pages receive independent meshes. Page boundaries and curvature still require
+  visual confirmation; the app does not claim fully automatic document detection.
 - **Rotation.** EXIF orientation is normalized before display and OCR. Arbitrary camera skew still
   requires manual rotation/perspective correction.
 - **Uncommon characters.** Rare kanji, old character forms (旧字体), gaiji, hand-drawn

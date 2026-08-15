@@ -88,6 +88,21 @@ purposes, each downsampled independently to the resolution that call site actual
 None of these load the full-resolution original into memory as a `Bitmap`; only the
 OCR engine and the editor's zoom view need anything close to full detail, and both cap it.
 
+### Two-page spread normalization
+
+The preprocessing flow treats a spread as two physical page surfaces rather than one wide page:
+
+1. `GutterDetector` suggests a split near the center from the vertical luminance profile; the user
+   can move it when lighting or artwork makes the suggestion ambiguous.
+2. The right and left regions have separate `DewarpMesh` values, so opposing curvature around the
+   spine is never forced into one displacement field.
+3. `OpenCvPageDewarper` maps each region to its own rectangular raster.
+4. `PageDao.insertAll` stores both page rows atomically. Right-to-left is the default insertion and
+   display order; each row owns a separate original copy and flattened file so deletion is safe.
+
+OCR receives the flattened per-page raster through the existing `ProcessingVariant.DEWARPED`
+resolution path. The original spread remains available per page for future reprocessing.
+
 ## Key design decisions
 
 - **No DI framework.** `AppContainer` is a ~10-line hand-rolled container; Hilt/Dagger would

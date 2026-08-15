@@ -1,6 +1,7 @@
 package com.local.bookocr.data.repository
 
 import com.local.bookocr.imageprocessor.ImageProcessor
+import com.local.bookocr.imageprocessor.model.ProcessingVariant
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -137,5 +138,31 @@ class PageRepositoryPreprocessingTest {
         assertNull(page.processedImagePath)
         assertEquals(0, page.processingVersion)
         assertFalse(page.processedImagePath == page.storedImagePath)
+    }
+
+    @Test
+    fun `prepared spread pages persist in right-to-left input order`() = runTest {
+        val ids = repository.importPreparedPages(
+            bookId = 1L,
+            pages = listOf(
+                PreparedPagePaths(
+                    storedImagePath = "spread-right-original.jpg",
+                    dewarpImagePath = "spread-right-flat.jpg",
+                    dewarpMeshJson = "right",
+                    activeVariant = ProcessingVariant.DEWARPED,
+                ),
+                PreparedPagePaths(
+                    storedImagePath = "spread-left-original.jpg",
+                    dewarpImagePath = "spread-left-flat.jpg",
+                    dewarpMeshJson = "left",
+                    activeVariant = ProcessingVariant.DEWARPED,
+                ),
+            ),
+        ).getOrThrow()
+
+        val pages = pageDao.getForBookOnce(1L).sortedForDisplay()
+        assertEquals(ids, pages.map { it.id })
+        assertEquals("spread-right-original.jpg", pages[0].storedImagePath)
+        assertEquals("spread-left-original.jpg", pages[1].storedImagePath)
     }
 }
