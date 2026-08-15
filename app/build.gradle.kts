@@ -100,6 +100,7 @@ dependencies {
 
     implementation(libs.mlkit.text.recognition.japanese)
     implementation(libs.play.services.tasks)
+    implementation(libs.tesseract4android)
 
     implementation(libs.opencv)
 

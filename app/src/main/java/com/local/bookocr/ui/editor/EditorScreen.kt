@@ -1,7 +1,6 @@
 package com.local.bookocr.ui.editor
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -48,6 +48,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.local.bookocr.imageprocessor.model.ProcessingVariant
+import com.local.bookocr.imageprocessor.internal.BitmapDecoding
+import com.local.bookocr.ocr.OcrEngineOption
 import com.local.bookocr.ui.bookOcrContainer
 import com.local.bookocr.ui.components.ZoomableImage
 import java.io.File
@@ -91,6 +93,7 @@ fun EditorScreen(onNavigateBack: () -> Unit) {
         onRerunOcr = viewModel::onRerunOcr,
         onRetryOcr = viewModel::onRetryOcr,
         onSelectVariant = viewModel::onSelectVariant,
+        onSelectEngine = viewModel::onSelectEngine,
     )
 }
 
@@ -106,6 +109,7 @@ private fun EditorScreenContent(
     onRerunOcr: () -> Unit,
     onRetryOcr: () -> Unit,
     onSelectVariant: (ProcessingVariant) -> Unit,
+    onSelectEngine: (String) -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -145,6 +149,14 @@ private fun EditorScreenContent(
                 )
             }
 
+            if (uiState.availableEngines.size >= 2) {
+                EngineSelector(
+                    available = uiState.availableEngines,
+                    activeEngineId = uiState.activeEngineId,
+                    onSelectEngine = onSelectEngine,
+                )
+            }
+
             when (val phase = uiState.phase) {
                 is OcrPhase.Loading -> OcrLoadingSection()
                 is OcrPhase.Error -> OcrErrorSection(message = phase.message, onRetry = onRetryOcr)
@@ -180,7 +192,9 @@ private fun SourceImageSection(imageFile: File?) {
 
         var bitmap by remember(imageFile) { mutableStateOf<Bitmap?>(null) }
         LaunchedEffect(imageFile) {
-            bitmap = withContext(Dispatchers.IO) { decodeSampledForDisplay(imageFile, MAX_DISPLAY_DIMENSION_PX) }
+            bitmap = withContext(Dispatchers.IO) {
+                BitmapDecoding.decodeUpright(imageFile, MAX_DISPLAY_DIMENSION_PX)
+            }
         }
         val currentBitmap = bitmap
         Box(
@@ -233,6 +247,29 @@ private fun ProcessingVariant.label(): String = when (this) {
     ProcessingVariant.ORIGINAL -> "元画像"
     ProcessingVariant.PERSPECTIVE -> "遠近補正"
     ProcessingVariant.DEWARPED -> "曲面補正"
+}
+
+@Composable
+private fun EngineSelector(
+    available: List<OcrEngineOption>,
+    activeEngineId: String,
+    onSelectEngine: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("OCRエンジン", style = MaterialTheme.typography.labelMedium)
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            available.forEach { engine ->
+                FilterChip(
+                    selected = engine.id == activeEngineId,
+                    onClick = { onSelectEngine(engine.id) },
+                    label = { Text(engine.displayName) },
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -317,20 +354,3 @@ private fun TranscriptSection(
 }
 
 private const val MAX_DISPLAY_DIMENSION_PX = 1600
-
-private fun decodeSampledForDisplay(file: File, maxDimension: Int): Bitmap? {
-    if (!file.exists()) return null
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    BitmapFactory.decodeFile(file.absolutePath, bounds)
-    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-
-    var sampleSize = 1
-    while (bounds.outWidth / (sampleSize * 2) >= maxDimension ||
-        bounds.outHeight / (sampleSize * 2) >= maxDimension
-    ) {
-        sampleSize *= 2
-    }
-
-    val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
-    return BitmapFactory.decodeFile(file.absolutePath, options)
-}

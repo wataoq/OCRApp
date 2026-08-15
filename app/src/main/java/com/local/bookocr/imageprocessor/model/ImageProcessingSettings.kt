@@ -55,7 +55,27 @@ data class PerspectiveQuad(
     val bottomRightY: Float = 1f,
     val bottomLeftX: Float = 0f,
     val bottomLeftY: Float = 1f,
-)
+) {
+    /** Converts original-image coordinates to the coordinate space of [cropRect]. */
+    fun relativeTo(cropRect: NormalizedRect): PerspectiveQuad {
+        val width = cropRect.right - cropRect.left
+        val height = cropRect.bottom - cropRect.top
+        if (width <= 0f || height <= 0f) return this
+
+        fun x(value: Float) = (value - cropRect.left) / width
+        fun y(value: Float) = (value - cropRect.top) / height
+        return PerspectiveQuad(
+            topLeftX = x(topLeftX),
+            topLeftY = y(topLeftY),
+            topRightX = x(topRightX),
+            topRightY = y(topRightY),
+            bottomRightX = x(bottomRightX),
+            bottomRightY = y(bottomRightY),
+            bottomLeftX = x(bottomLeftX),
+            bottomLeftY = y(bottomLeftY),
+        )
+    }
+}
 
 /**
  * Enhancement presets. Deliberately conservative: [ORIGINAL] is the safe default and no

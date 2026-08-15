@@ -1,6 +1,7 @@
 package com.local.bookocr.data.repository
 
 import com.local.bookocr.ocr.FakeOcrEngine
+import com.local.bookocr.ocr.OcrEngineRegistry
 import java.io.File
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
@@ -97,5 +98,32 @@ class OcrRepositoryTest {
 
         assertTrue(result.isFailure)
         assertNull(ocrResultDao.getByPageIdOnce(1L))
+    }
+
+    @Test
+    fun `explicit engine selection persists selected engine and preserves edits`() = runTest {
+        val first = FakeOcrEngine(nextText = "first output", engineId = "first")
+        val second = FakeOcrEngine(nextText = "second output", engineId = "second")
+        repository = OcrRepository(
+            ocrResultDao,
+            OcrEngineRegistry(listOf(first, second), defaultEngineId = first.engineId),
+            workDispatcher = UnconfinedTestDispatcher(),
+        )
+        repository.runInitialOcr(pageId = 1L, imageFile = imageFile)
+        repository.saveEditedText(pageId = 1L, editedText = "user correction")
+
+        val outcome = repository.rerunOcr(
+            pageId = 1L,
+            imageFile = imageFile,
+            engineId = second.engineId,
+        ).getOrThrow()
+
+        assertEquals(OcrRerunOutcome.EditsPreserved, outcome)
+        val stored = ocrResultDao.getByPageIdOnce(1L)!!
+        assertEquals("second output", stored.rawText)
+        assertEquals("user correction", stored.editedText)
+        assertEquals(second.engineId, stored.engineId)
+        assertEquals(1, first.recognizeCallCount)
+        assertEquals(1, second.recognizeCallCount)
     }
 }

@@ -9,24 +9,19 @@ them as "expect these failure modes," not "we verified these fail this way."
 
 ## Known / expected limitations
 
-- **Vertical Japanese text (縦書き).** ML Kit's text recognizer is designed for horizontal
-  text. Vertical layouts common in Japanese novels and many non-fiction books are likely to
-  produce garbled reading order or missed characters. No vertical-specific preprocessing is
-  implemented.
+- **Vertical Japanese text (縦書き).** The app detects predominantly tall text blocks and orders
+  those columns right-to-left, but ML Kit's recognizer is still primarily designed for horizontal
+  text. Characters may still be missed or grouped incorrectly.
 - **Ruby / furigana.** Small annotation glyphs above or beside kanji are likely to be
   misread, merged into the base text, or dropped entirely. There is no furigana-aware
   parsing.
-- **Reading order.** `rawText` is exactly what ML Kit returns, in the order it returns it.
-  For multi-column layouts, sidebars, footnotes, or captions, that order may not match how a
-  human would read the page. The app does not attempt reading-order correction - this is
-  precisely why the editor screen always shows the source image alongside the transcript,
-  and why manual correction is a first-class, expected part of the workflow rather than a
-  rare fallback.
-- **Page curvature and perspective.** Photos of open books (especially near the spine) are
-  often curved or shot at a slight angle. No curvature or perspective correction is applied
-  before OCR; recognition quality will degrade toward the page edges/gutter.
-- **Rotation.** Only a very slight rotation tolerance can be expected from the underlying
-  model. Meaningfully rotated photos should be re-taken/re-imported rather than relied on.
+- **Reading order.** Horizontal blocks are ordered top-to-bottom and left-to-right; detected
+  vertical columns are ordered right-to-left. Sidebars, footnotes, captions, and mixed layouts can
+  still be ambiguous.
+- **Page curvature and perspective.** User-guided perspective and curved-page correction are
+  available, but the app does not automatically detect the page boundary or curvature.
+- **Rotation.** EXIF orientation is normalized before display and OCR. Arbitrary camera skew still
+  requires manual rotation/perspective correction.
 - **Uncommon characters.** Rare kanji, old character forms (旧字体), gaiji, hand-drawn
   diagrams, and non-text marks are not guaranteed to be recognized correctly or at all.
 - **Mixed-script and typography edge cases.** Headers, footers, running page numbers,
@@ -52,6 +47,5 @@ Given the above, the product design leans on the human, not the model:
 
 ## Do not claim
 
-Do not describe this app as supporting vertical text, furigana, or curved-page correction
-unless and until each has actually been implemented and verified against real photographed
-pages on a device.
+Do not describe vertical text, furigana, or curved-page correction as high-accuracy until each has
+been verified against a representative photographed-page corpus on a real device.

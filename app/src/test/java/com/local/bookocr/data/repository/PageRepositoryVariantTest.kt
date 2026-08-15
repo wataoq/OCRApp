@@ -128,6 +128,20 @@ class PageRepositoryVariantTest {
     }
 
     @Test
+    fun `deletePage keeps all image files when the database delete fails`() = runTest {
+        val id = insertAllVariants()
+        val page = pageDao.getByIdOnce(id)!!
+        pageDao.deleteFailure = IllegalStateException("database unavailable")
+
+        val result = repository.deletePage(page)
+
+        assertTrue(result.isFailure)
+        assertTrue(imageStorage.deletedPaths.isEmpty())
+        assertTrue(imageStorage.deletedProcessedPaths.isEmpty())
+        assertTrue(imageStorage.deletedDewarpPaths.isEmpty())
+    }
+
+    @Test
     fun `importPageWithPaths defaults keep the original-only backward-compatible behavior`() = runTest {
         val id = repository.importPageWithPaths(1L, "original.jpg", null, null, 0, null).getOrThrow()
         val page = pageDao.getByIdOnce(id)!!

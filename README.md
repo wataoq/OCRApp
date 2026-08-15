@@ -9,7 +9,11 @@ stays visible for comparison.
 - Library of books (title, optional author, page count)
 - Per-book page list, ordered by page number with a deterministic fallback for unnumbered pages
 - Import a page photo via the system Photo Picker; the app keeps a private copy
-- On-device Japanese OCR (ML Kit Text Recognition v2)
+- Capture a page with the system camera
+- Non-destructive crop, perspective, contrast, and user-guided curved-page correction
+- Selectable on-device Japanese OCR: ML Kit Text Recognition v2, Tesseract horizontal, or
+  Tesseract vertical
+- EXIF-aware image display and OCR, with layout-aware horizontal/vertical block ordering
 - Editor screen: zoomable source image above an editable transcript
 - Strict separation of machine OCR output (`rawText`) from the user-corrected transcript
   (`editedText`) - see "The rawText/editedText invariant" below
@@ -26,7 +30,7 @@ ui/{library,book,editor}   Compose screens + ViewModels (StateFlow, immutable UI
 data/repository/           BookRepository, PageRepository, OcrRepository
 data/local/                Room entities, DAOs, AppDatabase
 storage/                   ImageStorage interface + PageImageStorage (app-private files)
-ocr/                       OcrEngine interface + MlKitOcrEngine + OcrDocument domain model
+ocr/                       Engine registry + ML Kit/Tesseract implementations + domain model
 AppContainer.kt            Hand-rolled DI container (no Hilt/Dagger)
 ```
 
@@ -41,7 +45,7 @@ and [`docs/OCR_LIMITATIONS.md`](docs/OCR_LIMITATIONS.md) for known OCR limitatio
 OCR output is source material and must never be silently rewritten. Every `ocr_results` row
 keeps both fields:
 
-- `rawText` - exactly what ML Kit returned, set once and never modified after the row exists
+- `rawText` - exactly what the selected OCR engine returned
 - `editedText` - the user's working transcript, initially equal to `rawText`
 
 Editing only ever changes `editedText`. A manual OCR re-run merges safely: if the user never
@@ -60,14 +64,9 @@ too; otherwise the edit is left untouched and only `rawText` is refreshed. See
 Requires an Android SDK (compileSdk 35) and network access to Google's Maven repository
 (`dl.google.com`) for AndroidX/Compose/Room/ML Kit artifacts on first sync.
 
-**This project was generated in a sandboxed environment that had no Android SDK installed
-and whose network policy blocked `dl.google.com`, so none of the above commands could
-actually be executed there.** The Gradle wrapper, version catalog, and full source tree are
-in place and were carefully hand-reviewed for compile correctness, but `assembleDebug`/
-`test`/`lint` have not been verified to pass. Run them in a normal Android development
-environment (Android Studio, or a CI runner with SDK + network access) before relying on
-this build. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for what was and wasn't
-verified.
+The project is verified with `assembleDebug`, unit tests, and Android Lint using JDK 21 and
+Android SDK 35. Use Android Studio's bundled JDK or set `JAVA_HOME`; no machine-specific JDK path
+is committed.
 
 ## Run
 
@@ -79,7 +78,8 @@ device or emulator with API 26+, or `./gradlew installDebug`.
 - No accounts, no backend, no cloud sync, no analytics, no crash reporting, no ads
 - All page images and OCR text stay in app-private storage (`allowBackup="false"`)
 - No `INTERNET` permission is requested
-- OCR runs entirely on-device via ML Kit's bundled Japanese model
+- OCR runs entirely on-device; the Tesseract `tessdata_fast` Japanese models are bundled and
+  integrity-checked before first use
 - App logs never contain OCR text or page contents
 
 ## Known limitations
@@ -89,7 +89,7 @@ reading order, page curvature/perspective, and more.
 
 ## Future extension points
 
-The architecture deliberately leaves room for (but does not implement) CameraX capture,
-batch import, perspective/contrast correction, a cloud OCR engine behind the same
-`OcrEngine` interface, OCR engine comparison, AI-assisted correction *suggestions* (never
-silent rewrites), TXT/Markdown export, and full-text search.
+The architecture deliberately leaves room for batch import, additional OCR engines behind the
+same `OcrEngine` interface, AI-assisted correction *suggestions* (never silent rewrites),
+TXT/Markdown export, and full-text search. The Tesseract rollout and remaining accuracy work are
+documented in [`docs/TESSERACT_MIGRATION.md`](docs/TESSERACT_MIGRATION.md).

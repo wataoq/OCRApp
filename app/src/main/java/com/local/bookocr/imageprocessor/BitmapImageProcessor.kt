@@ -68,6 +68,7 @@ class BitmapImageProcessor : ImageProcessor {
         // chain / recycled at the loader boundary) and the final returned bitmap.
         val intermediates = mutableListOf<Bitmap>()
         var current = source
+        var perspectivePoints = settings.perspectivePoints
 
         fun advance(next: Bitmap) {
             if (next !== current && current !== source) intermediates += current
@@ -84,10 +85,11 @@ class BitmapImageProcessor : ImageProcessor {
             val y = (rect.top * current.height).roundToInt().coerceIn(0, current.height - 1)
             val w = ((rect.right - rect.left) * current.width).roundToInt().coerceIn(1, current.width - x)
             val h = ((rect.bottom - rect.top) * current.height).roundToInt().coerceIn(1, current.height - y)
+            perspectivePoints = perspectivePoints?.relativeTo(rect)
             advance(Bitmap.createBitmap(current, x, y, w, h))
         }
 
-        settings.perspectivePoints?.let { quad ->
+        perspectivePoints?.let { quad ->
             advance(applyPerspective(current, quad))
         }
 

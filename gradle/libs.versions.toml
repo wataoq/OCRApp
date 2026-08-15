@@ -14,6 +14,7 @@ serializationJson = "1.7.3"
 mlkitTextRecognitionJapanese = "16.0.1"
 opencv = "4.11.0"
 playServicesTasks = "18.2.0"
+tesseract4Android = "4.9.0"
 junit = "4.13.2"
 mockito = "5.14.2"
 androidxTestExtJunit = "1.2.1"
@@ -47,6 +48,7 @@ kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-
 mlkit-text-recognition-japanese = { group = "com.google.mlkit", name = "text-recognition-japanese", version.ref = "mlkitTextRecognitionJapanese" }
 opencv = { group = "org.opencv", name = "opencv", version.ref = "opencv" }
 play-services-tasks = { group = "com.google.android.gms", name = "play-services-tasks", version.ref = "playServicesTasks" }
+tesseract4android = { group = "cz.adaptech.tesseract4android", name = "tesseract4android", version.ref = "tesseract4Android" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 mockito-core = { group = "org.mockito", name = "mockito-core", version.ref = "mockito" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }

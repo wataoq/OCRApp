@@ -10,9 +10,9 @@ import java.io.File
 class FakeOcrEngine(
     private var nextText: String = DEFAULT_TEXT,
     private val shouldFail: Boolean = false,
+    override val engineId: String = "fake-ocr-engine",
+    override val displayName: String = engineId,
 ) : OcrEngine {
-
-    override val engineId: String = "fake-ocr-engine"
 
     var recognizeCallCount = 0
         private set

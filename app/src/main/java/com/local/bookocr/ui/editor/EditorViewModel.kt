@@ -37,6 +37,8 @@ class EditorViewModel(
         EditorUiState(
             editedText = savedStateHandle[DRAFT_KEY] ?: "",
             hasUnsavedChanges = savedStateHandle.get<String>(DRAFT_KEY) != null,
+            availableEngines = ocrRepository.availableEngines,
+            activeEngineId = ocrRepository.defaultEngineId,
         ),
     )
     val uiState: StateFlow<EditorUiState> = _uiState.asStateFlow()
@@ -69,6 +71,9 @@ class EditorViewModel(
                         imageFile = imageFile,
                         availableVariants = available,
                         activeVariant = effectiveVariant,
+                        activeEngineId = result?.engineId
+                            ?.takeIf { id -> ocrRepository.availableEngines.any { it.id == id } }
+                            ?: current.activeEngineId,
                         rawText = result?.rawText ?: current.rawText,
                         editedText = if (result != null && !hasInitializedText) result.editedText else current.editedText,
                         phase = when {
@@ -82,18 +87,18 @@ class EditorViewModel(
 
                 if (result == null && !hasStartedOcrForThisLoad) {
                     hasStartedOcrForThisLoad = true
-                    runInitialOcr(imageFile)
+                    runInitialOcr(imageFile, _uiState.value.activeEngineId)
                 }
             }
         }
     }
 
-    private fun runInitialOcr(imageFile: File) {
+    private fun runInitialOcr(imageFile: File, engineId: String) {
         if (isRunningOcr) return
         isRunningOcr = true
         _uiState.update { it.copy(phase = OcrPhase.Loading) }
         viewModelScope.launch {
-            val result = ocrRepository.runInitialOcr(pageId, imageFile)
+            val result = ocrRepository.runInitialOcr(pageId, imageFile, engineId)
             isRunningOcr = false
             result.onFailure { error ->
                 _uiState.update { it.copy(phase = OcrPhase.Error(error.message ?: "文字認識に失敗しました")) }
@@ -104,12 +109,12 @@ class EditorViewModel(
     fun onRetryOcr() {
         val imageFile = _uiState.value.imageFile ?: return
         hasStartedOcrForThisLoad = true
-        runInitialOcr(imageFile)
+        runInitialOcr(imageFile, _uiState.value.activeEngineId)
     }
 
     fun onRerunOcr() {
         val imageFile = _uiState.value.imageFile ?: return
-        rerunOcrOn(imageFile)
+        rerunOcrOn(imageFile, _uiState.value.activeEngineId)
     }
 
     /**
@@ -124,16 +129,29 @@ class EditorViewModel(
             val page = pageRepository.getPageOnce(pageId) ?: return@launch
             val imageFile = pageRepository.resolveImageFile(page)
             _uiState.update { it.copy(imageFile = imageFile, activeVariant = variant) }
-            rerunOcrOn(imageFile)
+            rerunOcrOn(imageFile, _uiState.value.activeEngineId)
         }
     }
 
-    private fun rerunOcrOn(imageFile: File) {
+    fun onSelectEngine(engineId: String) {
+        val state = _uiState.value
+        if (engineId == state.activeEngineId || isRunningOcr) return
+        if (state.availableEngines.none { it.id == engineId }) return
+        val imageFile = state.imageFile ?: return
+        _uiState.update { it.copy(activeEngineId = engineId) }
+        rerunOcrOn(imageFile, engineId, restoreEngineIdOnFailure = state.activeEngineId)
+    }
+
+    private fun rerunOcrOn(
+        imageFile: File,
+        engineId: String,
+        restoreEngineIdOnFailure: String = engineId,
+    ) {
         if (isRunningOcr) return
         isRunningOcr = true
         _uiState.update { it.copy(phase = OcrPhase.Loading) }
         viewModelScope.launch {
-            val outcome = ocrRepository.rerunOcr(pageId, imageFile)
+            val outcome = ocrRepository.rerunOcr(pageId, imageFile, engineId)
             isRunningOcr = false
             outcome.onSuccess { result ->
                 if (result == OcrRerunOutcome.EditsReplaced) {
@@ -149,7 +167,11 @@ class EditorViewModel(
                 _uiState.update { it.copy(phase = OcrPhase.Ready, infoMessage = message) }
             }.onFailure { error ->
                 _uiState.update {
-                    it.copy(phase = OcrPhase.Ready, errorMessage = error.message ?: "文字認識に失敗しました")
+                    it.copy(
+                        phase = OcrPhase.Ready,
+                        activeEngineId = restoreEngineIdOnFailure,
+                        errorMessage = error.message ?: "文字認識に失敗しました",
+                    )
                 }
             }
         }
