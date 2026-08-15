@@ -1,10 +1,9 @@
 package com.local.bookocr.ui.book
 
-import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.lifecycle.viewmodel.createSavedStateHandle
+import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.local.bookocr.data.local.entity.PageEntity
@@ -47,20 +46,6 @@ class BookDetailViewModel(
                     _uiState.update { it.copy(book = book, pages = pages, isLoading = false) }
                 }
             }
-        }
-    }
-
-    fun importPage(uri: Uri) {
-        if (_uiState.value.isImporting) return
-        _uiState.update { it.copy(isImporting = true) }
-        viewModelScope.launch {
-            pageRepository.importPage(bookId, uri, pageNumber = null)
-                .onFailure { error ->
-                    _uiState.update {
-                        it.copy(errorMessage = error.message ?: "画像の読み込みに失敗しました")
-                    }
-                }
-            _uiState.update { it.copy(isImporting = false) }
         }
     }
 

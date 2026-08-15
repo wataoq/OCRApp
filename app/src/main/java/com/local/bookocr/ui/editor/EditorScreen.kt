@@ -22,8 +22,10 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -35,7 +37,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -46,6 +47,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.local.bookocr.imageprocessor.model.ProcessingVariant
 import com.local.bookocr.ui.bookOcrContainer
 import com.local.bookocr.ui.components.ZoomableImage
 import java.io.File
@@ -88,6 +90,7 @@ fun EditorScreen(onNavigateBack: () -> Unit) {
         onResetToRaw = viewModel::onResetToRaw,
         onRerunOcr = viewModel::onRerunOcr,
         onRetryOcr = viewModel::onRetryOcr,
+        onSelectVariant = viewModel::onSelectVariant,
     )
 }
 
@@ -102,6 +105,7 @@ private fun EditorScreenContent(
     onResetToRaw: () -> Unit,
     onRerunOcr: () -> Unit,
     onRetryOcr: () -> Unit,
+    onSelectVariant: (ProcessingVariant) -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -132,6 +136,14 @@ private fun EditorScreenContent(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             SourceImageSection(imageFile = uiState.imageFile)
+
+            if (uiState.availableVariants.size >= 2) {
+                VariantSelector(
+                    available = uiState.availableVariants,
+                    active = uiState.activeVariant,
+                    onSelectVariant = onSelectVariant,
+                )
+            }
 
             when (val phase = uiState.phase) {
                 is OcrPhase.Loading -> OcrLoadingSection()
@@ -166,18 +178,18 @@ private fun SourceImageSection(imageFile: File?) {
             return@Card
         }
 
-        val bitmapState = produceState<Bitmap?>(initialValue = null, imageFile) {
-            value = withContext(Dispatchers.IO) { decodeSampledForDisplay(imageFile, MAX_DISPLAY_DIMENSION_PX) }
+        var bitmap by remember(imageFile) { mutableStateOf<Bitmap?>(null) }
+        LaunchedEffect(imageFile) {
+            bitmap = withContext(Dispatchers.IO) { decodeSampledForDisplay(imageFile, MAX_DISPLAY_DIMENSION_PX) }
         }
-
-        val bitmap = bitmapState.value
+        val currentBitmap = bitmap
         Box(
             modifier = Modifier.fillMaxWidth(),
             contentAlignment = Alignment.Center,
         ) {
             when {
-                bitmap != null -> ZoomableImage(
-                    bitmap = bitmap.asImageBitmap(),
+                currentBitmap != null -> ZoomableImage(
+                    bitmap = currentBitmap.asImageBitmap(),
                     contentDescription = "ページの原稿画像",
                     modifier = Modifier.fillMaxWidth().height(360.dp),
                 )
@@ -195,6 +207,32 @@ private fun SourceImageSection(imageFile: File?) {
             }
         }
     }
+}
+
+@Composable
+private fun VariantSelector(
+    available: List<ProcessingVariant>,
+    active: ProcessingVariant,
+    onSelectVariant: (ProcessingVariant) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("OCR対象の画像", style = MaterialTheme.typography.labelMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            available.forEach { variant ->
+                FilterChip(
+                    selected = variant == active,
+                    onClick = { onSelectVariant(variant) },
+                    label = { Text(variant.label()) },
+                )
+            }
+        }
+    }
+}
+
+private fun ProcessingVariant.label(): String = when (this) {
+    ProcessingVariant.ORIGINAL -> "元画像"
+    ProcessingVariant.PERSPECTIVE -> "遠近補正"
+    ProcessingVariant.DEWARPED -> "曲面補正"
 }
 
 @Composable

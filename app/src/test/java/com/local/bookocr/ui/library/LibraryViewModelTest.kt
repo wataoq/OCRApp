@@ -29,7 +29,7 @@ class LibraryViewModelTest {
     fun setUp() {
         pageDao = FakePageDao()
         bookDao = FakeBookDao(pageDao)
-        repository = BookRepository(bookDao, pageDao, FakeImageStorage())
+        repository = BookRepository(bookDao, pageDao, FakeImageStorage(), mainDispatcherRule.dispatcher)
         viewModel = LibraryViewModel(repository)
     }
 

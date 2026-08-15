@@ -3,6 +3,7 @@ package com.local.bookocr.data.repository
 import android.net.Uri
 import com.local.bookocr.data.local.dao.PageDao
 import com.local.bookocr.data.local.entity.PageEntity
+import com.local.bookocr.imageprocessor.model.ProcessingVariant
 import com.local.bookocr.storage.ImageStorage
 import java.io.File
 import kotlinx.coroutines.CoroutineDispatcher
@@ -21,9 +22,40 @@ class PageRepository(
 
     fun observePage(pageId: Long): Flow<PageEntity?> = pageDao.observeById(pageId)
 
-    fun resolveImageFile(page: PageEntity): File = imageStorage.resolveFile(page.storedImagePath)
+    suspend fun getPageOnce(pageId: Long): PageEntity? = pageDao.getByIdOnce(pageId)
+
+    /**
+     * The file OCR should read for [page], chosen by its active variant: the dewarped or
+     * perspective-corrected image when that variant is selected and its file exists, otherwise the
+     * untouched original. This is the single OCR-integration point - EditorViewModel already calls
+     * this, so switching variants (and re-running OCR) needs no OCR-layer change.
+     */
+    fun resolveImageFile(page: PageEntity): File = when (variantOf(page)) {
+        ProcessingVariant.DEWARPED ->
+            page.dewarpImagePath?.takeIf { imageStorage.dewarpExists(it) }
+                ?.let { imageStorage.resolveDewarpFile(it) }
+                ?: imageStorage.resolveFile(page.storedImagePath)
+        ProcessingVariant.PERSPECTIVE ->
+            page.processedImagePath?.takeIf { imageStorage.processedExists(it) }
+                ?.let { imageStorage.resolveProcessedFile(it) }
+                ?: imageStorage.resolveFile(page.storedImagePath)
+        ProcessingVariant.ORIGINAL -> imageStorage.resolveFile(page.storedImagePath)
+    }
+
+    /** Always the untouched original, regardless of any correction (for re-editing corrections). */
+    fun resolveOriginalFile(page: PageEntity): File = imageStorage.resolveFile(page.storedImagePath)
 
     fun imageExists(page: PageEntity): Boolean = imageStorage.exists(page.storedImagePath)
+
+    /** Variants whose image actually exists on disk (ORIGINAL always; the others when generated). */
+    fun availableVariants(page: PageEntity): List<ProcessingVariant> = buildList {
+        add(ProcessingVariant.ORIGINAL)
+        page.processedImagePath?.takeIf { imageStorage.processedExists(it) }?.let { add(ProcessingVariant.PERSPECTIVE) }
+        page.dewarpImagePath?.takeIf { imageStorage.dewarpExists(it) }?.let { add(ProcessingVariant.DEWARPED) }
+    }
+
+    private fun variantOf(page: PageEntity): ProcessingVariant =
+        runCatching { ProcessingVariant.valueOf(page.activeVariant) }.getOrDefault(ProcessingVariant.PERSPECTIVE)
 
     /**
      * Copies [sourceUri] into app-private storage and inserts the page row. If the DB insert
@@ -53,10 +85,96 @@ class PageRepository(
         }
     }
 
+    /**
+     * Inserts a page whose original image was already imported (path known) - used by the image
+     * preprocessing flow, which imports the original and generates the processed image itself
+     * before persisting, so it can record both paths in one row without a second copy.
+     */
+    suspend fun importPageWithPaths(
+        bookId: Long,
+        storedImagePath: String,
+        processedImagePath: String?,
+        processingSettingsJson: String?,
+        processingVersion: Int,
+        pageNumber: Int?,
+        dewarpImagePath: String? = null,
+        dewarpMeshJson: String? = null,
+        activeVariant: ProcessingVariant = ProcessingVariant.PERSPECTIVE,
+    ): Result<Long> = withContext(ioDispatcher) {
+        val now = System.currentTimeMillis()
+        runCatching {
+            pageDao.insert(
+                PageEntity(
+                    bookId = bookId,
+                    pageNumber = pageNumber,
+                    storedImagePath = storedImagePath,
+                    processedImagePath = processedImagePath,
+                    processingSettingsJson = processingSettingsJson,
+                    processingVersion = processingVersion,
+                    dewarpImagePath = dewarpImagePath,
+                    dewarpMeshJson = dewarpMeshJson,
+                    activeVariant = activeVariant.name,
+                    createdAt = now,
+                    updatedAt = now,
+                ),
+            )
+        }
+    }
+
+    /** Records a freshly generated dewarp image + its mesh for an existing page (re-dewarp). */
+    suspend fun setDewarpImage(
+        pageId: Long,
+        dewarpPath: String,
+        meshJson: String,
+    ): Result<Unit> = runCatching {
+        pageDao.updateDewarpImage(pageId, dewarpPath, meshJson, System.currentTimeMillis())
+    }
+
+    /** Deletes the dewarp file and clears its columns; falls back to PERSPECTIVE if it was active. */
+    suspend fun clearDewarpImage(pageId: Long): Result<Unit> = withContext(ioDispatcher) {
+        runCatching {
+            val page = pageDao.getByIdOnce(pageId)
+            page?.dewarpImagePath?.let { imageStorage.deleteDewarp(it) }
+            pageDao.updateDewarpImage(pageId, null, null, System.currentTimeMillis())
+            if (page?.activeVariant == ProcessingVariant.DEWARPED.name) {
+                pageDao.updateActiveVariant(pageId, ProcessingVariant.PERSPECTIVE.name, System.currentTimeMillis())
+            }
+        }
+    }
+
+    /** Selects which corrected image OCR reads (Original / Perspective / Dewarped comparison). */
+    suspend fun setActiveVariant(pageId: Long, variant: ProcessingVariant): Result<Unit> = runCatching {
+        pageDao.updateActiveVariant(pageId, variant.name, System.currentTimeMillis())
+    }
+
+    /** Records a freshly generated processed image for an existing page (re-correction). */
+    suspend fun setProcessedImage(
+        pageId: Long,
+        processedPath: String,
+        settingsJson: String,
+        version: Int,
+    ): Result<Unit> = runCatching {
+        pageDao.updateProcessedImage(pageId, processedPath, settingsJson, version, System.currentTimeMillis())
+    }
+
+    /**
+     * Reverts a page to its original image: deletes the processed file and clears its columns.
+     * The original is never touched, so this is a safe "reset to original" for OCR.
+     */
+    suspend fun clearProcessedImage(pageId: Long): Result<Unit> = withContext(ioDispatcher) {
+        runCatching {
+            pageDao.getByIdOnce(pageId)?.processedImagePath?.let { imageStorage.deleteProcessed(it) }
+            pageDao.updateProcessedImage(pageId, null, null, 0, System.currentTimeMillis())
+        }
+    }
+
     suspend fun deletePage(page: PageEntity): Result<Unit> = withContext(ioDispatcher) {
         runCatching {
+            page.processedImagePath?.let { imageStorage.deleteProcessed(it) }
+            page.dewarpImagePath?.let { imageStorage.deleteDewarp(it) }
             pageDao.delete(page)
             imageStorage.delete(page.storedImagePath)
+            Unit
         }
     }
 

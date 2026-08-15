@@ -8,6 +8,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.mockito.Mockito.mock
 
 class PageRepositoryTest {
 
@@ -26,7 +27,7 @@ class PageRepositoryTest {
     fun `importPage copies the image then inserts a page row referencing it`() = runTest {
         imageStorage.nextImportResult = Result.success("uuid123.jpg")
 
-        val id = repository.importPage(bookId = 1L, sourceUri = Uri.EMPTY, pageNumber = 3).getOrThrow()
+        val id = repository.importPage(bookId = 1L, sourceUri = mock(Uri::class.java), pageNumber = 3).getOrThrow()
 
         val page = pageDao.getByIdOnce(id)
         assertEquals("uuid123.jpg", page?.storedImagePath)
@@ -37,7 +38,7 @@ class PageRepositoryTest {
     fun `importPage failure does not insert an orphaned page row`() = runTest {
         imageStorage.nextImportResult = Result.failure(RuntimeException("画像を開けませんでした"))
 
-        val result = repository.importPage(bookId = 1L, sourceUri = Uri.EMPTY, pageNumber = null)
+        val result = repository.importPage(bookId = 1L, sourceUri = mock(Uri::class.java), pageNumber = null)
 
         assertTrue(result.isFailure)
         assertTrue(pageDao.getForBookOnce(1L).isEmpty())

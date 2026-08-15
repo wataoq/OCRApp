@@ -19,6 +19,22 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+          Grants the system camera app temporary write access to a private temp file for
+          ACTION_IMAGE_CAPTURE (see ActivityResultContracts.TakePicture usage in the add-page
+          flow). No CAMERA permission is declared - the system camera app handles capture, so the
+          app's "everything on device, minimal permissions" posture is unchanged.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 
 </manifest>

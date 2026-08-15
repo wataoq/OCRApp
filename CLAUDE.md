@@ -16,9 +16,15 @@ service. See `README.md` for the MVP feature list and `docs/ARCHITECTURE.md` /
 User accounts, authentication, a backend server, cloud sync (Drive/Firebase/etc.),
 analytics, telemetry, ads, payments, sharing/social features, generative AI rewriting,
 summarization, translation, embeddings/vector search, CameraX capture, Cloud Vision /
-Document AI, batch scanning, PDF import, handwriting recognition, automatic perspective
-correction, heavy OpenCV preprocessing, Play Store publishing, or multi-module Gradle
-architecture.
+Document AI, batch scanning, PDF import, handwriting recognition, *automatic* page
+detection / perspective / dewarp (the corrections here are user-guided, not automatic),
+Play Store publishing, or multi-module Gradle architecture.
+
+Note: OpenCV *is* used, but only for the user-guided curved-page dewarp, confined entirely
+behind the `PageDewarper` interface (`imageprocessor/PageDewarper.kt`). This was an explicit
+product decision (2026-08) reversing the earlier "no heavy OpenCV preprocessing" non-goal.
+Do not spread OpenCV usage beyond `OpenCvPageDewarper`, and do not add *automatic* dewarp /
+page detection on top of it without a new product decision.
 
 ## The rawText/editedText invariant (do not violate)
 
@@ -53,6 +59,16 @@ unsaved work.
 - Image storage is accessed only through the `ImageStorage` interface
   (`storage/PageImageStorage.kt`). Repositories depend on the interface, not
   `PageImageStorage` directly, so tests can substitute an in-memory fake.
+- Image *correction* is non-destructive and lives behind two interfaces in `imageprocessor/`:
+  `ImageProcessor` (crop/perspective/enhancement, Android-SDK only) and `PageDewarper`
+  (curved-page dewarp, OpenCV). Neither leaks its implementation library to callers. The
+  original photo is never overwritten; each correction is a *separate* generated file derived
+  from `original + persisted settings/mesh`, so it can always be regenerated.
+- A page holds up to three OCR-able variants - `ORIGINAL` / `PERSPECTIVE` / `DEWARPED`
+  (`ProcessingVariant`) - plus `activeVariant`. `PageRepository.resolveImageFile` is the single
+  OCR-integration point: it maps the active variant to a file (falling back to the original when
+  that variant has no image on disk). Switching variants in the editor re-runs OCR through the
+  same `OcrRepository.rerunOcr` path, so the rawText/editedText invariant still holds.
 - No Hilt/Dagger. Dependencies flow through `AppContainer` / `DefaultAppContainer`
   (`AppContainer.kt`) and ViewModel factories built with `viewModelFactory { initializer {} }`.
   Keep it that way unless the app outgrows it.
@@ -68,6 +84,10 @@ unsaved work.
   already do.
 - Versions live in `gradle/libs.versions.toml`. When bumping, verify the AGP/Kotlin/KSP
   triple stays compatible (KSP's version string embeds the Kotlin version it targets).
+- OpenCV (`org.opencv:opencv`) is the one heavy native dependency. It is packaged **arm64-v8a
+  only** (`defaultConfig.ndk.abiFilters`) to keep the APK small; as a result the dewarp path
+  does not run on x86/x86_64 emulators (`PageDewarper.isAvailable()` returns false and the UI
+  disables dewarp). Keep it pinned to a stable 4.x release, not 5.x.
 
 ## Testability
 

@@ -43,7 +43,11 @@ class BookRepository(
         runCatching {
             val pages = pageDao.getForBookOnce(book.id)
             bookDao.delete(book)
-            pages.forEach { imageStorage.delete(it.storedImagePath) }
+            pages.forEach { page ->
+                page.processedImagePath?.let { imageStorage.deleteProcessed(it) }
+                page.dewarpImagePath?.let { imageStorage.deleteDewarp(it) }
+                imageStorage.delete(page.storedImagePath)
+            }
         }
     }
 }

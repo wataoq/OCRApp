@@ -3,12 +3,13 @@ package com.local.bookocr.ui.editor
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.lifecycle.viewmodel.createSavedStateHandle
+import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.local.bookocr.data.repository.OcrRepository
 import com.local.bookocr.data.repository.OcrRerunOutcome
 import com.local.bookocr.data.repository.PageRepository
+import com.local.bookocr.imageprocessor.model.ProcessingVariant
 import com.local.bookocr.ui.navigation.BookOcrDestinations
 import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -57,11 +58,17 @@ class EditorViewModel(
                 }
                 hasLoadedPageOnce = true
                 val imageFile = pageRepository.resolveImageFile(page)
+                val available = pageRepository.availableVariants(page)
+                val stored = runCatching { ProcessingVariant.valueOf(page.activeVariant) }
+                    .getOrDefault(ProcessingVariant.PERSPECTIVE)
+                val effectiveVariant = if (stored in available) stored else ProcessingVariant.ORIGINAL
 
                 _uiState.update { current ->
                     current.copy(
                         page = page,
                         imageFile = imageFile,
+                        availableVariants = available,
+                        activeVariant = effectiveVariant,
                         rawText = result?.rawText ?: current.rawText,
                         editedText = if (result != null && !hasInitializedText) result.editedText else current.editedText,
                         phase = when {
@@ -102,6 +109,26 @@ class EditorViewModel(
 
     fun onRerunOcr() {
         val imageFile = _uiState.value.imageFile ?: return
+        rerunOcrOn(imageFile)
+    }
+
+    /**
+     * Switches which correction variant OCR reads and re-runs OCR on it, so the user can compare
+     * OCR output across Original / Perspective / Dewarped. The rawText/editedText invariant is
+     * unchanged: the switch goes through [OcrRepository.rerunOcr], which preserves user edits.
+     */
+    fun onSelectVariant(variant: ProcessingVariant) {
+        if (variant == _uiState.value.activeVariant || isRunningOcr) return
+        viewModelScope.launch {
+            pageRepository.setActiveVariant(pageId, variant)
+            val page = pageRepository.getPageOnce(pageId) ?: return@launch
+            val imageFile = pageRepository.resolveImageFile(page)
+            _uiState.update { it.copy(imageFile = imageFile, activeVariant = variant) }
+            rerunOcrOn(imageFile)
+        }
+    }
+
+    private fun rerunOcrOn(imageFile: File) {
         if (isRunningOcr) return
         isRunningOcr = true
         _uiState.update { it.copy(phase = OcrPhase.Loading) }

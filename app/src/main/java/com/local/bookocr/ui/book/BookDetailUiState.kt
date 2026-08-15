@@ -7,7 +7,6 @@ data class BookDetailUiState(
     val book: BookEntity? = null,
     val pages: List<PageEntity> = emptyList(),
     val isLoading: Boolean = true,
-    val isImporting: Boolean = false,
     val pagePendingDeletion: PageEntity? = null,
     val pagePendingNumberEdit: PageEntity? = null,
     val errorMessage: String? = null,

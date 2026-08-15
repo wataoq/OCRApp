@@ -18,6 +18,19 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // OpenCV ships native .so libs per ABI. This is a private single-user app, so we package
+        // only arm64-v8a (modern 64-bit ARM - the phone this targets and virtually all real
+        // devices) to keep the APK small. Note: x86/x86_64 emulators cannot run the dewarp path.
+        ndk {
+            abiFilters += "arm64-v8a"
+        }
+    }
+
+    // Expose the exported Room schemas to instrumented tests so MigrationTestHelper can validate
+    // the schema history (see AppDatabaseMigrationTest).
+    sourceSets {
+        getByName("androidTest").assets.srcDir("$projectDir/schemas")
     }
 
     buildTypes {
@@ -60,9 +73,11 @@ ksp {
 
 dependencies {
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.exifinterface)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.savedstate)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.activity.compose)
 
@@ -86,7 +101,10 @@ dependencies {
     implementation(libs.mlkit.text.recognition.japanese)
     implementation(libs.play.services.tasks)
 
+    implementation(libs.opencv)
+
     testImplementation(libs.junit)
+    testImplementation(libs.mockito.core)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.androidx.arch.core.testing)
     testImplementation(libs.androidx.room.testing)

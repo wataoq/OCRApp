@@ -39,4 +39,50 @@ class FakePageDao : PageDao {
             list.map { if (it.id == pageId) it.copy(pageNumber = pageNumber, updatedAt = updatedAt) else it }
         }
     }
+
+    override suspend fun updateProcessedImage(
+        pageId: Long,
+        processedPath: String?,
+        settingsJson: String?,
+        version: Int,
+        updatedAt: Long,
+    ) {
+        pages.update { list ->
+            list.map {
+                if (it.id == pageId) {
+                    it.copy(
+                        processedImagePath = processedPath,
+                        processingSettingsJson = settingsJson,
+                        processingVersion = version,
+                        updatedAt = updatedAt,
+                    )
+                } else {
+                    it
+                }
+            }
+        }
+    }
+
+    override suspend fun updateDewarpImage(
+        pageId: Long,
+        dewarpPath: String?,
+        meshJson: String?,
+        updatedAt: Long,
+    ) {
+        pages.update { list ->
+            list.map {
+                if (it.id == pageId) {
+                    it.copy(dewarpImagePath = dewarpPath, dewarpMeshJson = meshJson, updatedAt = updatedAt)
+                } else {
+                    it
+                }
+            }
+        }
+    }
+
+    override suspend fun updateActiveVariant(pageId: Long, variant: String, updatedAt: Long) {
+        pages.update { list ->
+            list.map { if (it.id == pageId) it.copy(activeVariant = variant, updatedAt = updatedAt) else it }
+        }
+    }
 }

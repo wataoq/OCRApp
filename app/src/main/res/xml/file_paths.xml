@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Exposes only the app-private cache/camera/ directory to the system camera app via FileProvider.
+  Captured photos are staged here, then copied into app storage by ImageStorage.importImage; the
+  temp file is disposable cache.
+-->
+<paths>
+    <cache-path name="camera_captures" path="camera/" />
+</paths>

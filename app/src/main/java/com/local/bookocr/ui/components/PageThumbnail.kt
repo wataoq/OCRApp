@@ -10,8 +10,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
@@ -27,14 +30,15 @@ import kotlinx.coroutines.withContext
  */
 @Composable
 fun PageThumbnail(imageFile: File, modifier: Modifier = Modifier, maxDimensionPx: Int = 200) {
-    val bitmapState = produceState<Bitmap?>(initialValue = null, imageFile, maxDimensionPx) {
-        value = withContext(Dispatchers.IO) { decodeSampledThumbnail(imageFile, maxDimensionPx) }
+    var bitmap by remember(imageFile, maxDimensionPx) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(imageFile, maxDimensionPx) {
+        bitmap = withContext(Dispatchers.IO) { decodeSampledThumbnail(imageFile, maxDimensionPx) }
     }
 
     Box(modifier = modifier.size(64.dp), contentAlignment = Alignment.Center) {
-        val bitmap = bitmapState.value
+        val currentBitmap = bitmap
         when {
-            bitmap != null -> Image(bitmap = bitmap.asImageBitmap(), contentDescription = null)
+            currentBitmap != null -> Image(bitmap = currentBitmap.asImageBitmap(), contentDescription = null)
             imageFile.exists() -> CircularProgressIndicator(modifier = Modifier.size(20.dp))
             else -> Icon(Icons.Default.BrokenImage, contentDescription = "画像が見つかりません")
         }

@@ -1,8 +1,11 @@
 package com.local.bookocr.ui.book
 
+import android.content.Context
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.FileProvider
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -50,9 +53,14 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.local.bookocr.data.local.entity.PageEntity
 import com.local.bookocr.ui.bookOcrContainer
 import com.local.bookocr.ui.components.PageThumbnail
+import java.io.File
 
 @Composable
-fun BookDetailScreen(onNavigateBack: () -> Unit, onOpenPage: (Long) -> Unit) {
+fun BookDetailScreen(
+    onNavigateBack: () -> Unit,
+    onOpenPage: (Long) -> Unit,
+    onImportPage: (Uri) -> Unit,
+) {
     val container = LocalContext.current.bookOcrContainer()
     val viewModel: BookDetailViewModel = viewModel(
         factory = BookDetailViewModel.factory(container.bookRepository, container.pageRepository),
@@ -71,24 +79,77 @@ fun BookDetailScreen(onNavigateBack: () -> Unit, onOpenPage: (Long) -> Unit) {
         }
     }
 
+    val context = LocalContext.current
+
+    // Both the gallery picker and the system camera produce a Uri that flows into the same
+    // correction screen, which owns the import + processing before the page row is created.
     val pickMedia = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        uri?.let(viewModel::importPage)
+        uri?.let(onImportPage)
     }
+    // The camera writes the full-res photo to this staged Uri; on success we import it.
+    var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
+    val takePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        val uri = pendingCameraUri
+        pendingCameraUri = null
+        if (success && uri != null) onImportPage(uri)
+    }
+    var showSourceChooser by remember { mutableStateOf(false) }
 
     BookDetailScreenContent(
         uiState = uiState,
         snackbarHostState = snackbarHostState,
         onNavigateBack = onNavigateBack,
         onOpenPage = onOpenPage,
-        onAddPageClick = {
-            pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-        },
+        onAddPageClick = { showSourceChooser = true },
         onDeleteRequest = viewModel::onDeleteRequest,
         onDismissDeleteRequest = viewModel::onDismissDeleteRequest,
         onConfirmDelete = viewModel::onConfirmDeletePage,
         onEditPageNumberRequest = viewModel::onEditPageNumberRequest,
         onDismissPageNumberEdit = viewModel::onDismissPageNumberEdit,
         onConfirmPageNumber = viewModel::onConfirmPageNumber,
+    )
+
+    if (showSourceChooser) {
+        AddPageSourceDialog(
+            onDismiss = { showSourceChooser = false },
+            onCamera = {
+                showSourceChooser = false
+                val uri = createCameraImageUri(context)
+                if (uri != null) {
+                    pendingCameraUri = uri
+                    takePicture.launch(uri)
+                }
+            },
+            onGallery = {
+                showSourceChooser = false
+                pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            },
+        )
+    }
+}
+
+/**
+ * Creates a private cache file (under `cache/camera/`) and returns a FileProvider content Uri the
+ * system camera app can write the captured photo to. Returns null if the Uri cannot be created.
+ */
+private fun createCameraImageUri(context: Context): Uri? = runCatching {
+    val cameraDir = File(context.cacheDir, "camera").apply { mkdirs() }
+    val file = File(cameraDir, "capture_${System.currentTimeMillis()}.jpg")
+    FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+}.getOrNull()
+
+@Composable
+private fun AddPageSourceDialog(
+    onDismiss: () -> Unit,
+    onCamera: () -> Unit,
+    onGallery: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("ページの追加方法") },
+        text = { Text("カメラで撮影するか、ギャラリーから画像を選択します。") },
+        confirmButton = { TextButton(onClick = onCamera) { Text("カメラで撮影") } },
+        dismissButton = { TextButton(onClick = onGallery) { Text("ギャラリーから選択") } },
     )
 }
 
@@ -121,11 +182,7 @@ private fun BookDetailScreenContent(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             FloatingActionButton(onClick = onAddPageClick) {
-                if (uiState.isImporting) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                } else {
-                    Icon(Icons.Default.Add, contentDescription = "ページを追加")
-                }
+                Icon(Icons.Default.Add, contentDescription = "ページを追加")
             }
         },
     ) { padding ->

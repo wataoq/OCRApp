@@ -72,27 +72,32 @@ class MlKitOcrEngine : OcrEngine {
     }
 }
 
-private fun Text.toOcrDocument(engineId: String): OcrDocument = OcrDocument(
-    rawText = text,
-    engineId = engineId,
-    blocks = textBlocks.map { block ->
-        OcrBlock(
-            text = block.text,
-            boundingBox = block.boundingBox?.toOcrBoundingBox(),
-            lines = block.lines.map { line ->
-                OcrLine(
-                    text = line.text,
-                    boundingBox = line.boundingBox?.toOcrBoundingBox(),
-                    elements = line.elements.map { element ->
-                        OcrElement(
-                            text = element.text,
-                            boundingBox = element.boundingBox?.toOcrBoundingBox(),
-                        )
-                    },
-                )
-            },
-        )
-    },
-)
+private fun Text.toOcrDocument(engineId: String): OcrDocument {
+    // Japanese books are read right-to-left: sort blocks by their horizontal center
+    // in descending order so the rightmost column comes first.
+    val sortedBlocks = textBlocks.sortedByDescending { it.boundingBox?.centerX() ?: 0 }
+    return OcrDocument(
+        rawText = sortedBlocks.joinToString("\n") { it.text },
+        engineId = engineId,
+        blocks = sortedBlocks.map { block ->
+            OcrBlock(
+                text = block.text,
+                boundingBox = block.boundingBox?.toOcrBoundingBox(),
+                lines = block.lines.map { line ->
+                    OcrLine(
+                        text = line.text,
+                        boundingBox = line.boundingBox?.toOcrBoundingBox(),
+                        elements = line.elements.map { element ->
+                            OcrElement(
+                                text = element.text,
+                                boundingBox = element.boundingBox?.toOcrBoundingBox(),
+                            )
+                        },
+                    )
+                },
+            )
+        },
+    )
+}
 
 private fun android.graphics.Rect.toOcrBoundingBox() = OcrBoundingBox(left, top, right, bottom)

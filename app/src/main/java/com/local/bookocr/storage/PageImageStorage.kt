@@ -20,6 +20,21 @@ interface ImageStorage {
     fun resolveFile(storedImagePath: String): File
     fun exists(storedImagePath: String): Boolean
     suspend fun delete(storedImagePath: String): Boolean
+
+    /**
+     * Processed (corrected) images live in a separate directory from originals so the two
+     * lifecycles never collide - deleting a processed image can never touch the original.
+     */
+    fun allocateProcessedFile(): File
+    fun resolveProcessedFile(processedPath: String): File
+    fun processedExists(processedPath: String): Boolean
+    suspend fun deleteProcessed(processedPath: String): Boolean
+
+    /** Dewarp variant images, kept in their own directory (sibling of processed images). */
+    fun allocateDewarpFile(): File
+    fun resolveDewarpFile(dewarpPath: String): File
+    fun dewarpExists(dewarpPath: String): Boolean
+    suspend fun deleteDewarp(dewarpPath: String): Boolean
 }
 
 /**
@@ -32,6 +47,14 @@ class PageImageStorage(private val context: Context) : ImageStorage {
 
     private val imagesDir: File by lazy {
         File(context.filesDir, IMAGES_DIR_NAME).apply { mkdirs() }
+    }
+
+    private val processedDir: File by lazy {
+        File(context.filesDir, PROCESSED_DIR_NAME).apply { mkdirs() }
+    }
+
+    private val dewarpDir: File by lazy {
+        File(context.filesDir, DEWARP_DIR_NAME).apply { mkdirs() }
     }
 
     override suspend fun importImage(sourceUri: Uri): Result<String> = withContext(Dispatchers.IO) {
@@ -66,6 +89,28 @@ class PageImageStorage(private val context: Context) : ImageStorage {
         if (file.exists()) file.delete() else true
     }
 
+    override fun allocateProcessedFile(): File = File(processedDir, "${UUID.randomUUID()}.jpg")
+
+    override fun resolveProcessedFile(processedPath: String): File = File(processedDir, processedPath)
+
+    override fun processedExists(processedPath: String): Boolean = resolveProcessedFile(processedPath).exists()
+
+    override suspend fun deleteProcessed(processedPath: String): Boolean = withContext(Dispatchers.IO) {
+        val file = resolveProcessedFile(processedPath)
+        if (file.exists()) file.delete() else true
+    }
+
+    override fun allocateDewarpFile(): File = File(dewarpDir, "${UUID.randomUUID()}.jpg")
+
+    override fun resolveDewarpFile(dewarpPath: String): File = File(dewarpDir, dewarpPath)
+
+    override fun dewarpExists(dewarpPath: String): Boolean = resolveDewarpFile(dewarpPath).exists()
+
+    override suspend fun deleteDewarp(dewarpPath: String): Boolean = withContext(Dispatchers.IO) {
+        val file = resolveDewarpFile(dewarpPath)
+        if (file.exists()) file.delete() else true
+    }
+
     private fun resolveExtension(uri: Uri): String =
         when (context.contentResolver.getType(uri)) {
             "image/png" -> "png"
@@ -75,5 +120,7 @@ class PageImageStorage(private val context: Context) : ImageStorage {
 
     companion object {
         private const val IMAGES_DIR_NAME = "page_images"
+        private const val PROCESSED_DIR_NAME = "processed_images"
+        private const val DEWARP_DIR_NAME = "dewarp_images"
     }
 }

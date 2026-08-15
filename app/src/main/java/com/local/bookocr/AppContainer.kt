@@ -6,6 +6,10 @@ import com.local.bookocr.data.local.database.AppDatabase
 import com.local.bookocr.data.repository.BookRepository
 import com.local.bookocr.data.repository.OcrRepository
 import com.local.bookocr.data.repository.PageRepository
+import com.local.bookocr.imageprocessor.BitmapImageProcessor
+import com.local.bookocr.imageprocessor.ImageProcessor
+import com.local.bookocr.imageprocessor.OpenCvPageDewarper
+import com.local.bookocr.imageprocessor.PageDewarper
 import com.local.bookocr.ocr.MlKitOcrEngine
 import com.local.bookocr.ocr.OcrEngine
 import com.local.bookocr.storage.ImageStorage
@@ -20,6 +24,11 @@ interface AppContainer {
     val bookRepository: BookRepository
     val pageRepository: PageRepository
     val ocrRepository: OcrRepository
+
+    /** Exposed so the image-preprocessing flow can import originals and stage processed files. */
+    val imageStorage: ImageStorage
+    val imageProcessor: ImageProcessor
+    val pageDewarper: PageDewarper
 }
 
 class DefaultAppContainer(context: Context) : AppContainer {
@@ -28,10 +37,15 @@ class DefaultAppContainer(context: Context) : AppContainer {
 
     private val database: AppDatabase by lazy {
         Room.databaseBuilder(applicationContext, AppDatabase::class.java, AppDatabase.DATABASE_NAME)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3)
             .build()
     }
 
-    private val imageStorage: ImageStorage by lazy { PageImageStorage(applicationContext) }
+    override val imageStorage: ImageStorage by lazy { PageImageStorage(applicationContext) }
+
+    override val imageProcessor: ImageProcessor by lazy { BitmapImageProcessor() }
+
+    override val pageDewarper: PageDewarper by lazy { OpenCvPageDewarper() }
 
     private val ocrEngine: OcrEngine by lazy { MlKitOcrEngine() }
 

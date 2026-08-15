@@ -1,6 +1,7 @@
 package com.local.bookocr.ui.editor
 
 import com.local.bookocr.data.local.entity.PageEntity
+import com.local.bookocr.imageprocessor.model.ProcessingVariant
 import java.io.File
 
 sealed interface OcrPhase {
@@ -17,6 +18,10 @@ data class EditorUiState(
     val editedText: String = "",
     val hasUnsavedChanges: Boolean = false,
     val isSaving: Boolean = false,
+    /** Correction variants that exist for this page; a selector shows only these (>=2 to compare). */
+    val availableVariants: List<ProcessingVariant> = emptyList(),
+    /** The variant OCR currently reads; switching it re-runs OCR for comparison. */
+    val activeVariant: ProcessingVariant = ProcessingVariant.ORIGINAL,
     val infoMessage: String? = null,
     val errorMessage: String? = null,
     val pageDeletedExternally: Boolean = false,

@@ -30,4 +30,26 @@ interface PageDao {
 
     @Query("UPDATE pages SET pageNumber = :pageNumber, updatedAt = :updatedAt WHERE id = :pageId")
     suspend fun updatePageNumber(pageId: Long, pageNumber: Int?, updatedAt: Long)
+
+    @Query(
+        "UPDATE pages SET processedImagePath = :processedPath, " +
+            "processingSettingsJson = :settingsJson, processingVersion = :version, " +
+            "updatedAt = :updatedAt WHERE id = :pageId",
+    )
+    suspend fun updateProcessedImage(
+        pageId: Long,
+        processedPath: String?,
+        settingsJson: String?,
+        version: Int,
+        updatedAt: Long,
+    )
+
+    @Query(
+        "UPDATE pages SET dewarpImagePath = :dewarpPath, dewarpMeshJson = :meshJson, " +
+            "updatedAt = :updatedAt WHERE id = :pageId",
+    )
+    suspend fun updateDewarpImage(pageId: Long, dewarpPath: String?, meshJson: String?, updatedAt: Long)
+
+    @Query("UPDATE pages SET activeVariant = :variant, updatedAt = :updatedAt WHERE id = :pageId")
+    suspend fun updateActiveVariant(pageId: Long, variant: String, updatedAt: Long)
 }
