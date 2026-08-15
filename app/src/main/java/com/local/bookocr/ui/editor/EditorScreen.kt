@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -48,6 +49,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.local.bookocr.imageprocessor.model.ProcessingVariant
 import com.local.bookocr.imageprocessor.internal.BitmapDecoding
+import com.local.bookocr.ocr.OcrEngineOption
 import com.local.bookocr.ui.bookOcrContainer
 import com.local.bookocr.ui.components.ZoomableImage
 import java.io.File
@@ -91,6 +93,7 @@ fun EditorScreen(onNavigateBack: () -> Unit) {
         onRerunOcr = viewModel::onRerunOcr,
         onRetryOcr = viewModel::onRetryOcr,
         onSelectVariant = viewModel::onSelectVariant,
+        onSelectEngine = viewModel::onSelectEngine,
     )
 }
 
@@ -106,6 +109,7 @@ private fun EditorScreenContent(
     onRerunOcr: () -> Unit,
     onRetryOcr: () -> Unit,
     onSelectVariant: (ProcessingVariant) -> Unit,
+    onSelectEngine: (String) -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -142,6 +146,14 @@ private fun EditorScreenContent(
                     available = uiState.availableVariants,
                     active = uiState.activeVariant,
                     onSelectVariant = onSelectVariant,
+                )
+            }
+
+            if (uiState.availableEngines.size >= 2) {
+                EngineSelector(
+                    available = uiState.availableEngines,
+                    activeEngineId = uiState.activeEngineId,
+                    onSelectEngine = onSelectEngine,
                 )
             }
 
@@ -235,6 +247,29 @@ private fun ProcessingVariant.label(): String = when (this) {
     ProcessingVariant.ORIGINAL -> "元画像"
     ProcessingVariant.PERSPECTIVE -> "遠近補正"
     ProcessingVariant.DEWARPED -> "曲面補正"
+}
+
+@Composable
+private fun EngineSelector(
+    available: List<OcrEngineOption>,
+    activeEngineId: String,
+    onSelectEngine: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("OCRエンジン", style = MaterialTheme.typography.labelMedium)
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            available.forEach { engine ->
+                FilterChip(
+                    selected = engine.id == activeEngineId,
+                    onClick = { onSelectEngine(engine.id) },
+                    label = { Text(engine.displayName) },
+                )
+            }
+        }
+    }
 }
 
 @Composable

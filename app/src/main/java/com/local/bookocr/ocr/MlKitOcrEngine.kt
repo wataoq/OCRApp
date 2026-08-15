@@ -25,6 +25,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 class MlKitOcrEngine : OcrEngine {
 
     override val engineId: String = ENGINE_ID
+    override val displayName: String = "ML Kit（日本語）"
 
     private val recognizer by lazy {
         TextRecognition.getClient(JapaneseTextRecognizerOptions.Builder().build())

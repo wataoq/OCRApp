@@ -3,6 +3,8 @@ package com.local.bookocr.data.repository
 import com.local.bookocr.data.local.dao.OcrResultDao
 import com.local.bookocr.data.local.entity.OcrResultEntity
 import com.local.bookocr.ocr.OcrEngine
+import com.local.bookocr.ocr.OcrEngineOption
+import com.local.bookocr.ocr.OcrEngineRegistry
 import com.local.bookocr.ocr.OcrException
 import com.local.bookocr.ocr.model.layoutBlocksToJsonOrNull
 import java.io.File
@@ -18,18 +20,31 @@ sealed interface OcrRerunOutcome {
 
 class OcrRepository(
     private val ocrResultDao: OcrResultDao,
-    private val ocrEngine: OcrEngine,
+    private val engineRegistry: OcrEngineRegistry,
     private val workDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
+    constructor(
+        ocrResultDao: OcrResultDao,
+        ocrEngine: OcrEngine,
+        workDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    ) : this(ocrResultDao, OcrEngineRegistry(listOf(ocrEngine)), workDispatcher)
+
+    val availableEngines: List<OcrEngineOption> get() = engineRegistry.options
+    val defaultEngineId: String get() = engineRegistry.defaultEngineId
+
     fun observeResult(pageId: Long): Flow<OcrResultEntity?> = ocrResultDao.observeByPageId(pageId)
 
     suspend fun getResultOnce(pageId: Long): OcrResultEntity? = ocrResultDao.getByPageIdOnce(pageId)
 
     /** First OCR pass for a page: editedText starts out equal to rawText. */
-    suspend fun runInitialOcr(pageId: Long, imageFile: File): Result<OcrResultEntity> =
+    suspend fun runInitialOcr(
+        pageId: Long,
+        imageFile: File,
+        engineId: String = defaultEngineId,
+    ): Result<OcrResultEntity> =
         withContext(workDispatcher) {
             runCatching {
-                val doc = ocrEngine.recognize(imageFile)
+                val doc = engineRegistry.requireEngine(engineId).recognize(imageFile)
                 val now = System.currentTimeMillis()
                 ocrResultDao.upsert(
                     OcrResultEntity(
@@ -52,11 +67,16 @@ class OcrRepository(
      * replaces it too. Otherwise the edited transcript is preserved untouched and only
      * rawText is refreshed - a rerun can never silently destroy corrections.
      */
-    suspend fun rerunOcr(pageId: Long, imageFile: File): Result<OcrRerunOutcome> =
+    suspend fun rerunOcr(
+        pageId: Long,
+        imageFile: File,
+        engineId: String? = null,
+    ): Result<OcrRerunOutcome> =
         withContext(workDispatcher) {
             runCatching {
                 val existing = ocrResultDao.getByPageIdOnce(pageId)
-                val doc = ocrEngine.recognize(imageFile)
+                val requestedEngineId = engineId ?: existing?.engineId ?: defaultEngineId
+                val doc = engineRegistry.requireEngine(requestedEngineId).recognize(imageFile)
                 val now = System.currentTimeMillis()
                 val userHadEdited = existing != null && existing.editedText != existing.rawText
                 val newEditedText = if (userHadEdited) existing!!.editedText else doc.rawText

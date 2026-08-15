@@ -8,17 +8,23 @@ wholesale. Integrate its underlying Apache-2.0 engine,
 `OcrEngine` interface. This preserves the current UI, Room schema, edit-safety invariant, and image
 pipeline while allowing ML Kit and Tesseract to be compared on the same input file.
 
-## Proposed first experiment
+## Implemented first experiment
 
-1. Add a `TesseractOcrEngine` implementation using one long-lived, serialized `TessBaseAPI` instance.
-2. Test both official Apache-2.0 language models:
-   - `jpn.traineddata` for horizontal Japanese.
-   - `jpn_vert.traineddata` for vertical Japanese.
-3. Start with `tessdata_fast` for iteration speed, then benchmark `tessdata_best` on the same pages.
-4. Add an explicit engine/layout selector to the editor; do not silently replace existing ML Kit
-   results or user edits.
-5. Record engine id, language model, page segmentation mode, duration, and confidence metadata
-   without storing or logging page text outside the existing private database.
+- `Tesseract4Android` 4.9.0 (Tesseract 5.5.1) is registered alongside ML Kit.
+- Official `tessdata_fast` `jpn` and `jpn_vert` models are bundled and verified by SHA-256 before
+  being installed atomically in app-private storage.
+- The editor exposes explicit ML Kit, horizontal Tesseract, and vertical Tesseract choices.
+- Engine changes go through the existing safe rerun merge, so a user's corrections are preserved.
+- Each recognition call owns and recycles its `TessBaseAPI` instance, avoiding unsafe concurrent
+  access when multiple pages are processed.
+
+## Remaining accuracy experiment
+
+1. Benchmark `tessdata_fast` against `tessdata_best` on the same private page corpus.
+2. Tune page segmentation and preprocessing separately for horizontal and vertical pages.
+3. Record engine id, language model, page segmentation mode, duration, and confidence metadata
+   without logging or exporting page text.
+4. Keep ML Kit as the default until measurements justify changing it.
 
 ## Training-data distribution decision
 
@@ -43,5 +49,5 @@ from measured results rather than replaced globally before this comparison.
 ## License obligations
 
 Tesseract, its official trained data, Tesseract4Android, and the reference F-Droid app are
-Apache-2.0 licensed. Retain required copyright/license notices and add the dependency and trained
-data to the app's open-source notices before distribution.
+Apache-2.0 licensed. Their sources, versions, and model hashes are recorded in
+[`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md).

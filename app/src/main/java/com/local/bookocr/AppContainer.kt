@@ -12,6 +12,8 @@ import com.local.bookocr.imageprocessor.OpenCvPageDewarper
 import com.local.bookocr.imageprocessor.PageDewarper
 import com.local.bookocr.ocr.MlKitOcrEngine
 import com.local.bookocr.ocr.OcrEngine
+import com.local.bookocr.ocr.OcrEngineRegistry
+import com.local.bookocr.ocr.TesseractOcrEngine
 import com.local.bookocr.storage.ImageStorage
 import com.local.bookocr.storage.PageImageStorage
 
@@ -47,7 +49,25 @@ class DefaultAppContainer(context: Context) : AppContainer {
 
     override val pageDewarper: PageDewarper by lazy { OpenCvPageDewarper() }
 
-    private val ocrEngine: OcrEngine by lazy { MlKitOcrEngine() }
+    private val ocrEngines: List<OcrEngine> by lazy {
+        listOf(
+            MlKitOcrEngine(),
+            TesseractOcrEngine(
+                context = applicationContext,
+                model = TesseractOcrEngine.JAPANESE_MODEL,
+                engineId = TesseractOcrEngine.HORIZONTAL_ENGINE_ID,
+                displayName = "Tesseract 5（横書き・fast）",
+                pageSegMode = TesseractOcrEngine.HORIZONTAL_PAGE_SEG_MODE,
+            ),
+            TesseractOcrEngine(
+                context = applicationContext,
+                model = TesseractOcrEngine.JAPANESE_VERTICAL_MODEL,
+                engineId = TesseractOcrEngine.VERTICAL_ENGINE_ID,
+                displayName = "Tesseract 5（縦書き・fast）",
+                pageSegMode = TesseractOcrEngine.VERTICAL_PAGE_SEG_MODE,
+            ),
+        )
+    }
 
     override val bookRepository: BookRepository by lazy {
         BookRepository(database.bookDao(), database.pageDao(), imageStorage)
@@ -58,6 +78,6 @@ class DefaultAppContainer(context: Context) : AppContainer {
     }
 
     override val ocrRepository: OcrRepository by lazy {
-        OcrRepository(database.ocrResultDao(), ocrEngine)
+        OcrRepository(database.ocrResultDao(), OcrEngineRegistry(ocrEngines, MlKitOcrEngine.ENGINE_ID))
     }
 }

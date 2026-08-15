@@ -8,6 +8,7 @@ import com.local.bookocr.data.repository.FakePageDao
 import com.local.bookocr.data.repository.OcrRepository
 import com.local.bookocr.data.repository.PageRepository
 import com.local.bookocr.ocr.FakeOcrEngine
+import com.local.bookocr.ocr.OcrEngineRegistry
 import com.local.bookocr.ui.navigation.BookOcrDestinations
 import com.local.bookocr.util.MainDispatcherRule
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -143,5 +144,59 @@ class EditorViewModelTest {
         advanceUntilIdle()
 
         assertTrue(viewModel.uiState.value.phase is OcrPhase.Error)
+    }
+
+    @Test
+    fun `selecting another engine reruns OCR and keeps user corrections`() = runTest {
+        pageId = insertPage()
+        val first = FakeOcrEngine(nextText = "first output", engineId = "first", displayName = "First")
+        val second = FakeOcrEngine(nextText = "second output", engineId = "second", displayName = "Second")
+        val multiEngineRepository = OcrRepository(
+            ocrResultDao,
+            OcrEngineRegistry(listOf(first, second), defaultEngineId = first.engineId),
+            workDispatcher = mainDispatcherRule.dispatcher,
+        )
+        val viewModel = EditorViewModel(
+            SavedStateHandle(mapOf(BookOcrDestinations.PAGE_ID_ARG to pageId)),
+            pageRepository,
+            multiEngineRepository,
+        )
+        advanceUntilIdle()
+        viewModel.onEditedTextChanged("user correction")
+        viewModel.onSave()
+        advanceUntilIdle()
+
+        viewModel.onSelectEngine(second.engineId)
+        advanceUntilIdle()
+
+        assertEquals(second.engineId, viewModel.uiState.value.activeEngineId)
+        assertEquals("second output", viewModel.uiState.value.rawText)
+        assertEquals("user correction", viewModel.uiState.value.editedText)
+        assertEquals(1, second.recognizeCallCount)
+    }
+
+    @Test
+    fun `failed engine switch restores the engine that owns the displayed result`() = runTest {
+        pageId = insertPage()
+        val first = FakeOcrEngine(nextText = "first output", engineId = "first")
+        val failing = FakeOcrEngine(shouldFail = true, engineId = "failing")
+        val multiEngineRepository = OcrRepository(
+            ocrResultDao,
+            OcrEngineRegistry(listOf(first, failing), defaultEngineId = first.engineId),
+            workDispatcher = mainDispatcherRule.dispatcher,
+        )
+        val viewModel = EditorViewModel(
+            SavedStateHandle(mapOf(BookOcrDestinations.PAGE_ID_ARG to pageId)),
+            pageRepository,
+            multiEngineRepository,
+        )
+        advanceUntilIdle()
+
+        viewModel.onSelectEngine(failing.engineId)
+        advanceUntilIdle()
+
+        assertEquals(first.engineId, viewModel.uiState.value.activeEngineId)
+        assertEquals("first output", viewModel.uiState.value.rawText)
+        assertTrue(viewModel.uiState.value.errorMessage != null)
     }
 }
