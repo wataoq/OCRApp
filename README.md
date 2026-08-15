@@ -11,6 +11,8 @@ stays visible for comparison.
 - Import a page photo via the system Photo Picker; the app keeps a private copy
 - Capture a page with the system camera
 - Non-destructive crop, perspective, contrast, and user-guided curved-page correction
+- Two-page spread scanning with gutter detection, adjustable split position, independent left/right
+  page flattening, and right-to-left import order by default
 - Selectable on-device Japanese OCR: ML Kit Text Recognition v2, Tesseract horizontal, or
   Tesseract vertical
 - EXIF-aware image display and OCR, with layout-aware horizontal/vertical block ordering

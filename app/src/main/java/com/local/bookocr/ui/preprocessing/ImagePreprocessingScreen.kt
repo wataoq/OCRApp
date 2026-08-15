@@ -26,6 +26,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Tab
@@ -55,10 +56,13 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.local.bookocr.imageprocessor.model.DewarpMesh
+import com.local.bookocr.imageprocessor.model.DocumentLayout
 import com.local.bookocr.imageprocessor.model.EnhancementMode
 import com.local.bookocr.imageprocessor.model.MeshPoint
 import com.local.bookocr.imageprocessor.model.NormalizedRect
 import com.local.bookocr.imageprocessor.model.PerspectiveQuad
+import com.local.bookocr.imageprocessor.model.ReadingDirection
+import com.local.bookocr.imageprocessor.model.SpreadPageSide
 import com.local.bookocr.ui.bookOcrContainer
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -121,17 +125,25 @@ fun ImagePreprocessingScreen(
 
             ScrollableTabRow(selectedTabIndex = uiState.activeTab.ordinal, edgePadding = 0.dp) {
                 Tab(
+                    selected = uiState.activeTab == PreprocessingTab.LAYOUT,
+                    onClick = { viewModel.onTabSelected(PreprocessingTab.LAYOUT) },
+                    text = { Text("ページ構成") },
+                )
+                Tab(
                     selected = uiState.activeTab == PreprocessingTab.CROP,
+                    enabled = uiState.documentLayout == DocumentLayout.SINGLE_PAGE,
                     onClick = { viewModel.onTabSelected(PreprocessingTab.CROP) },
                     text = { Text("トリミング") },
                 )
                 Tab(
                     selected = uiState.activeTab == PreprocessingTab.PERSPECTIVE,
+                    enabled = uiState.documentLayout == DocumentLayout.SINGLE_PAGE,
                     onClick = { viewModel.onTabSelected(PreprocessingTab.PERSPECTIVE) },
                     text = { Text("遠近補正") },
                 )
                 Tab(
                     selected = uiState.activeTab == PreprocessingTab.ENHANCEMENT,
+                    enabled = uiState.documentLayout == DocumentLayout.SINGLE_PAGE,
                     onClick = { viewModel.onTabSelected(PreprocessingTab.ENHANCEMENT) },
                     text = { Text("補正モード") },
                 )
@@ -145,6 +157,12 @@ fun ImagePreprocessingScreen(
 
             Box(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
                 when (uiState.activeTab) {
+                    PreprocessingTab.LAYOUT -> LayoutControls(
+                        uiState = uiState,
+                        onLayoutChanged = viewModel::onDocumentLayoutChanged,
+                        onSplitPositionChanged = viewModel::onSplitPositionChanged,
+                        onReadingDirectionChanged = viewModel::onReadingDirectionChanged,
+                    )
                     PreprocessingTab.CROP ->
                         Text("画像の角のハンドルをドラッグしてトリミング範囲を調整してください", style = MaterialTheme.typography.bodySmall)
                     PreprocessingTab.PERSPECTIVE ->
@@ -159,23 +177,11 @@ fun ImagePreprocessingScreen(
                                 )
                             }
                         }
-                    PreprocessingTab.DEWARP ->
-                        if (uiState.dewarpMesh == null) {
-                            Column {
-                                Text(
-                                    "本のノド側で曲がったページを補正します。上下の点を文字行の端に合わせます。",
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                                TextButton(onClick = viewModel::onEnableDewarp, enabled = uiState.isDewarpSupported) {
-                                    Text("曲面補正を有効にする")
-                                }
-                            }
-                        } else {
-                            Text(
-                                "上端・下端の点をページの文字行の曲がりに合わせてドラッグし、「プレビュー」で確認してください。",
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
+                    PreprocessingTab.DEWARP -> DewarpControls(
+                        uiState = uiState,
+                        onEnableDewarp = viewModel::onEnableDewarp,
+                        onActiveSpreadSideChanged = viewModel::onActiveSpreadSideChanged,
+                    )
                 }
             }
 
@@ -189,14 +195,16 @@ fun ImagePreprocessingScreen(
                 OutlinedButton(
                     onClick = viewModel::onUpdatePreview,
                     modifier = Modifier.weight(1f),
-                    enabled = !uiState.isLoadingPreview && uiState.originalBitmap != null,
+                    enabled = !uiState.isLoadingPreview && uiState.originalBitmap != null &&
+                        uiState.activeTab != PreprocessingTab.LAYOUT,
                 ) {
                     Text("プレビュー")
                 }
                 Button(
                     onClick = viewModel::onConfirm,
                     modifier = Modifier.weight(1f),
-                    enabled = !uiState.isSaving && uiState.originalBitmap != null,
+                    enabled = !uiState.isSaving && uiState.originalBitmap != null &&
+                        (uiState.documentLayout == DocumentLayout.SINGLE_PAGE || uiState.isDewarpSupported),
                 ) {
                     if (uiState.isSaving) {
                         CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
@@ -206,6 +214,95 @@ fun ImagePreprocessingScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun LayoutControls(
+    uiState: ImagePreprocessingUiState,
+    onLayoutChanged: (DocumentLayout) -> Unit,
+    onSplitPositionChanged: (Float) -> Unit,
+    onReadingDirectionChanged: (ReadingDirection) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("撮影した画像のページ構成", style = MaterialTheme.typography.bodySmall)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = uiState.documentLayout == DocumentLayout.SINGLE_PAGE,
+                onClick = { onLayoutChanged(DocumentLayout.SINGLE_PAGE) },
+                label = { Text("1ページ") },
+            )
+            FilterChip(
+                selected = uiState.documentLayout == DocumentLayout.TWO_PAGE_SPREAD,
+                onClick = { onLayoutChanged(DocumentLayout.TWO_PAGE_SPREAD) },
+                label = { Text("見開き2ページ") },
+            )
+        }
+
+        if (uiState.documentLayout == DocumentLayout.TWO_PAGE_SPREAD) {
+            Text("黄色い線を本のノド中央へ合わせてください", style = MaterialTheme.typography.bodySmall)
+            Slider(
+                value = uiState.splitPosition,
+                onValueChange = onSplitPositionChanged,
+                valueRange = 0.25f..0.75f,
+            )
+            Text("ページ順", style = MaterialTheme.typography.bodySmall)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = uiState.readingDirection == ReadingDirection.RIGHT_TO_LEFT,
+                    onClick = { onReadingDirectionChanged(ReadingDirection.RIGHT_TO_LEFT) },
+                    label = { Text("右 → 左（標準）") },
+                )
+                FilterChip(
+                    selected = uiState.readingDirection == ReadingDirection.LEFT_TO_RIGHT,
+                    onClick = { onReadingDirectionChanged(ReadingDirection.LEFT_TO_RIGHT) },
+                    label = { Text("左 → 右") },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DewarpControls(
+    uiState: ImagePreprocessingUiState,
+    onEnableDewarp: () -> Unit,
+    onActiveSpreadSideChanged: (SpreadPageSide) -> Unit,
+) {
+    if (uiState.documentLayout == DocumentLayout.TWO_PAGE_SPREAD) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                "左右を別々の曲面として補正します。調整するページを選び、上下の点を文字領域の端へ合わせてください。",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = uiState.activeSpreadSide == SpreadPageSide.RIGHT,
+                    onClick = { onActiveSpreadSideChanged(SpreadPageSide.RIGHT) },
+                    label = { Text("右ページ") },
+                )
+                FilterChip(
+                    selected = uiState.activeSpreadSide == SpreadPageSide.LEFT,
+                    onClick = { onActiveSpreadSideChanged(SpreadPageSide.LEFT) },
+                    label = { Text("左ページ") },
+                )
+            }
+        }
+    } else if (uiState.dewarpMesh == null) {
+        Column {
+            Text(
+                "本のノド側で曲がったページを補正します。上下の点を文字行の端に合わせます。",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            TextButton(onClick = onEnableDewarp, enabled = uiState.isDewarpSupported) {
+                Text("曲面補正を有効にする")
+            }
+        }
+    } else {
+        Text(
+            "上端・下端の点をページの文字行の曲がりに合わせてドラッグし、「プレビュー」で確認してください。",
+            style = MaterialTheme.typography.bodySmall,
+        )
     }
 }
 
@@ -240,6 +337,14 @@ private fun PreviewArea(
             )
             if (!uiState.showProcessed && containerSize != IntSize.Zero) {
                 when (uiState.activeTab) {
+                    PreprocessingTab.LAYOUT -> if (uiState.documentLayout == DocumentLayout.TWO_PAGE_SPREAD) {
+                        SpreadDividerOverlay(
+                            modifier = Modifier.fillMaxSize(),
+                            bitmap = displayBitmap,
+                            containerSize = containerSize,
+                            splitPosition = uiState.splitPosition,
+                        )
+                    }
                     PreprocessingTab.CROP -> CropOverlay(
                         modifier = Modifier.fillMaxSize(),
                         bitmap = displayBitmap,
@@ -254,7 +359,7 @@ private fun PreviewArea(
                         quad = uiState.settings.perspectivePoints ?: PerspectiveQuad(),
                         onQuadChanged = onPerspectiveChanged,
                     )
-                    PreprocessingTab.DEWARP -> uiState.dewarpMesh?.let { mesh ->
+                    PreprocessingTab.DEWARP -> uiState.activeMeshForDisplay()?.let { mesh ->
                         DewarpOverlay(
                             modifier = Modifier.fillMaxSize(),
                             bitmap = displayBitmap,
@@ -279,6 +384,40 @@ private fun PreviewArea(
         if (uiState.isLoadingPreview) {
             CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
         }
+    }
+}
+
+private fun ImagePreprocessingUiState.activeMeshForDisplay(): DewarpMesh? = when (documentLayout) {
+    DocumentLayout.SINGLE_PAGE -> dewarpMesh
+    DocumentLayout.TWO_PAGE_SPREAD -> when (activeSpreadSide) {
+        SpreadPageSide.RIGHT -> rightPageMesh
+        SpreadPageSide.LEFT -> leftPageMesh
+    }
+}
+
+@Composable
+private fun SpreadDividerOverlay(
+    modifier: Modifier,
+    bitmap: Bitmap,
+    containerSize: IntSize,
+    splitPosition: Float,
+) {
+    val imageRect = remember(bitmap.width, bitmap.height, containerSize) {
+        computeFitRect(bitmap.width, bitmap.height, containerSize.width, containerSize.height)
+    }
+    Canvas(modifier = modifier) {
+        val splitX = imageRect.left + splitPosition * imageRect.width
+        drawLine(
+            color = Color(0xFFFFEB3B),
+            start = Offset(splitX, imageRect.top),
+            end = Offset(splitX, imageRect.top + imageRect.height),
+            strokeWidth = 4.dp.toPx(),
+        )
+        drawCircle(
+            color = Color(0xFFFFEB3B),
+            radius = 8.dp.toPx(),
+            center = Offset(splitX, imageRect.top + imageRect.height / 2f),
+        )
     }
 }
 

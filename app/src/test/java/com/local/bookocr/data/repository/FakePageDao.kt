@@ -20,6 +20,8 @@ class FakePageDao : PageDao {
         return id
     }
 
+    override suspend fun insertAll(pages: List<PageEntity>): List<Long> = pages.map { insert(it) }
+
     override suspend fun delete(page: PageEntity) {
         deleteFailure?.let { throw it }
         pages.update { list -> list.filterNot { it.id == page.id } }

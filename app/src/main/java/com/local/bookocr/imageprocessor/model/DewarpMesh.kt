@@ -32,9 +32,22 @@ data class DewarpMesh(
          * straight bottom edge the user then drags to follow the page's real curvature.
          */
         fun default(pointsPerEdge: Int = 3): DewarpMesh {
-            val step = if (pointsPerEdge <= 1) 0f else 1f / (pointsPerEdge - 1)
-            val top = (0 until pointsPerEdge).map { MeshPoint(it * step, TOP_EDGE_Y) }
-            val bottom = (0 until pointsPerEdge).map { MeshPoint(it * step, BOTTOM_EDGE_Y) }
+            return forHorizontalRegion(0f, 1f, pointsPerEdge)
+        }
+
+        /** Default mesh limited to one page region inside a two-page spread. */
+        fun forHorizontalRegion(
+            left: Float,
+            right: Float,
+            pointsPerEdge: Int = 3,
+        ): DewarpMesh {
+            require(pointsPerEdge >= MIN_POINTS_PER_EDGE)
+            val boundedLeft = left.coerceIn(0f, 1f)
+            val boundedRight = right.coerceIn(0f, 1f)
+            require(boundedRight > boundedLeft)
+            val step = (boundedRight - boundedLeft) / (pointsPerEdge - 1)
+            val top = (0 until pointsPerEdge).map { MeshPoint(boundedLeft + it * step, TOP_EDGE_Y) }
+            val bottom = (0 until pointsPerEdge).map { MeshPoint(boundedLeft + it * step, BOTTOM_EDGE_Y) }
             return DewarpMesh(top, bottom)
         }
 
